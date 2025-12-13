@@ -72,7 +72,7 @@ python3 -m photojobs verify --root "/path/source" [--out "/path/output"]
 
 **Usage**:
 ```bash
-python3 -m photojobs csvgen --csv "/path/file.csv" --jobname "JobName" [--team-field "Team"] [--outdir "/path/output"]
+python3 -m photojobs csvgen --csv "/path/file.csv" --jobname "JobName" [--team-field "Team"] [--outdir "/path/output"] [--batch-suffixes "BATCH1:_suffix1,BATCH2:_suffix2"]
 ```
 
 **Behavior**:
@@ -82,10 +82,11 @@ python3 -m photojobs csvgen --csv "/path/file.csv" --jobname "JobName" [--team-f
 - Adds new columns: "NAME" (First + Last), "Team File" (e.g., "TeamName.psb")
 - Parses "Photo Filenames" field (supports multiple filenames per subject)
 - Expands each subject into multiple rows (one per photo)
-- Generates new filenames: `Last_First_Team_Number_Grade_FileNumber.ext`
+- Generates new filenames: `Last_First_Team_Number_Grade_FileNumber[_suffix].ext`
 - Extracts 4-digit file numbers from original filenames
 - **Detects image batches** by analyzing filename prefixes (e.g., JS101234 vs JS201234)
 - Adds BATCH column to all output CSVs for downstream filtering
+- **Supports batch-specific suffixes** inserted before file extension
 
 **Outputs**:
 - `<jobname> DATA-JPG.csv` - All subjects with .jpg extension (includes PHOTO, NEWFILENAME, and BATCH columns)
@@ -93,11 +94,14 @@ python3 -m photojobs csvgen --csv "/path/file.csv" --jobname "JobName" [--team-f
 - `<jobname> DATA-ALL.csv` - Combined JPG + PNG rows
 - `<jobname> DATA-RENAME.txt` - Tab-delimited rename plan (original → new filename) - legacy format
 
-**Batch Detection**:
+**Batch Detection and Suffixes**:
 - Automatically detects multiple image batches from filename prefixes
 - Example: JS101234.jpg → batch "JS10", JS201234.jpg → batch "JS20"
 - Reports detected batches in output summary
 - BATCH column preserved through rename step for team selection filtering
+- Optional batch suffixes allow differentiating photo types in filenames
+- Example: `--batch-suffixes "JS10:_indiv,JS20:_group"` → `Smith_John_1234_indiv.jpg` and `Smith_John_5678_group.jpg`
+- Suffix is inserted before the file extension: `basename + suffix + ext`
 
 **Default output**: Same directory as input CSV (unless `--outdir` specified)
 
@@ -315,28 +319,31 @@ python3 -m photojobs teams --csv "MyJob2025 DATA-PNG.csv" --root ./originals_key
 
 ### "Run All" Automated Workflow (AppleScript Launcher)
 
-The AppleScript launcher includes a "Run All" option that automates the complete workflow:
+The AppleScript launcher includes a "Run All" option that automates the core workflow:
 
 **Sequence**:
 1. **Keywords**: Apply keywords to originals → `<root>_keywords/`
-2. **Csvgen**: Generate JPG/PNG CSVs and rename plan
+2. **Csvgen**: Generate JPG/PNG CSVs and rename plan (with optional batch suffixes)
 3. **Rename**: Use JPG CSV to rename `<root>_keywords/` → `<root>_keywords_renamed/`
-4. **Teams**: Use PNG CSV to sort `<root>_keywords_renamed/` → `_TeamIndSorted/`
 
 **Features**:
 - Single initial prompt for CSV, root folder, and manual keyword
 - Automatically derives all intermediate paths and filenames
-- Progress indicator shows 4 steps with current step
+- Progress indicator shows 3 steps with current step
 - Detects preset from CSV headers (photoday vs legacy)
-- Detects and prompts for batch selection if multiple batches exist
-- Handles team assignment prompts if needed
+- **Detects multiple batches and prompts for suffix per batch** (e.g., "_indiv" for individual photos)
+- Batch suffixes are inserted before file extension in generated filenames
 - Final summary shows all output locations
 
 **Output locations**:
 - Keywords output: `<root>_keywords/`
 - Renamed files: `<root>_keywords_renamed/`
 - CSV files: Same directory as input CSV
-- Team folders: `_TeamIndSorted/` (in parent of root folder)
+
+**Note**: The `teams` command must be run separately after "Run All" completes, as it typically operates on PNG files that require an intermediate compositing process (e.g., Photoshop batch processing). Run teams manually with:
+```bash
+python3 -m photojobs teams --csv "MyJob2025 DATA-PNG.csv" --root /path/to/png/images
+```
 
 ## Known Issues & TODOs
 
