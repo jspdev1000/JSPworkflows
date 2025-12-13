@@ -40,8 +40,8 @@ def build_parser() -> argparse.ArgumentParser:
     t = sub.add_parser("teams", help="Sort into team folders")
     t.add_argument("--csv", required=True, help="CSV file containing team assignments")
     t.add_argument("--root", required=True, help="Root folder of images to sort (often <job>_keywords)")
-    t.add_argument("--team-field", default="Team", help="Team column name")
-    t.add_argument("--out", default="", help="Output folder (defaults to <root>_teams)")
+    t.add_argument("--team-field", default="TEAMNAME", help="Team column name")
+    t.add_argument("--out", default="", help="Output folder (defaults to _TeamIndSorted in parent dir)")
 
     return p
 

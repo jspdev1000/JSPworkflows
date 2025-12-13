@@ -36,7 +36,7 @@ if cmdName is "keywords" then
 			set presetName to "legacy"
 		end if
 	end try
-	
+
 	-- Fallback to prompt if unknown
 	if presetName is "" then
 		set presetChoice to choose from list {"photoday", "legacy"} with prompt "Choose preset:" default items {"photoday"}
@@ -53,29 +53,38 @@ else if cmdName is "verify" then
 	set rootPath to POSIX path of rootFolder
 	set shcmd to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs verify --root " & quoted form of rootPath
 else if cmdName is "csvgen" then
-	set csvAlias to choose file with prompt "Select the INPUT CSV file:" of type {"public.comma-separated-values-text", "public.text"}
+	set csvAlias to choose file with prompt "Select the CSV file:" of type {"public.comma-separated-values-text", "public.text"}
 	set csvPath to POSIX path of csvAlias
-	set rootFolder to choose folder with prompt "Select the ROOT folder that contains originals (job folder):"
-	set rootPath to POSIX path of rootFolder
-	set jobNameDialog to display dialog "Enter job name for output files (e.g., phsdebate25-26):" default answer "job"
-	set jobName to text returned of jobNameDialog
-	set teamFieldDialog to display dialog "Enter Team field name (default Team):" default answer "Team"
-	set teamField to text returned of teamFieldDialog
-	set shcmd to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs csvgen --csv " & quoted form of csvPath & " --root " & quoted form of rootPath & " --jobname " & quoted form of jobName & " --team-field " & quoted form of teamField
+	-- Extract job name from CSV filename (remove extension)
+	set AppleScript's text item delimiters to "/"
+	set csvFileName to last text item of csvPath
+	set AppleScript's text item delimiters to "."
+	set jobName to first text item of csvFileName
+	set AppleScript's text item delimiters to ""
+	set shcmd to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs csvgen --csv " & quoted form of csvPath & " --jobname " & quoted form of jobName
 else if cmdName is "rename" then
-	set rootFolder to choose folder with prompt "Select the SOURCE root folder to rename (copy mode by default):"
-	set rootPath to POSIX path of rootFolder
-	set planAlias to choose file with prompt "Select the rename plan file:" of type {"public.text", "public.comma-separated-values-text"}
+	set planAlias to choose file with prompt "Select the RENAME DATA (JPG) file:" of type {"public.text", "public.comma-separated-values-text"}
 	set planPath to POSIX path of planAlias
+	set rootFolder to choose folder with prompt "Select the IMAGE SOURCE folder (copy mode by default):"
+	set rootPath to POSIX path of rootFolder
 	set shcmd to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs rename --root " & quoted form of rootPath & " --plan " & quoted form of planPath & " --mode copy"
 else if cmdName is "teams" then
-	set csvAlias to choose file with prompt "Select the CSV file with teams:" of type {"public.comma-separated-values-text", "public.text"}
+	set csvAlias to choose file with prompt "Select the PNG CSV file from csvgen:" of type {"public.comma-separated-values-text", "public.text"}
 	set csvPath to POSIX path of csvAlias
-	set rootFolder to choose folder with prompt "Select the ROOT folder of images to sort (often <job>_keywords):"
+	set rootFolder to choose folder with prompt "Select the folder containing PNG images:"
 	set rootPath to POSIX path of rootFolder
-	set teamFieldDialog to display dialog "Enter Team field name (default Team):" default answer "Team"
-	set teamField to text returned of teamFieldDialog
-	set shcmd to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs teams --csv " & quoted form of csvPath & " --root " & quoted form of rootPath & " --team-field " & quoted form of teamField
+
+	-- Check if there are people without teams
+	set checkCmd to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -c \"import csv; f=open('" & csvPath & "'); r=csv.DictReader(f); missing=sum(1 for row in r if not row.get('TEAMNAME', '').strip()); print(missing)\""
+	set missingCount to do shell script checkCmd
+
+	if missingCount as integer > 0 then
+		set defaultTeamDialog to display dialog "There are " & missingCount & " people without a team. Enter a default team name for them:" default answer "NoTeam"
+		set defaultTeam to text returned of defaultTeamDialog
+		set shcmd to "cd " & quoted form of toolsFolder & " && echo " & quoted form of defaultTeam & " | /usr/bin/python3 -m photojobs teams --csv " & quoted form of csvPath & " --root " & quoted form of rootPath & " --team-field TEAMNAME"
+	else
+		set shcmd to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs teams --csv " & quoted form of csvPath & " --root " & quoted form of rootPath & " --team-field TEAMNAME"
+	end if
 end if
 
 -- Progress indicator while running
