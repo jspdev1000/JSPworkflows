@@ -1,0 +1,6 @@
+# placeholder preset for PhotoDay keyword ingestion
+csv:
+  filenames_column: "Photo Filenames"
+  first_name: "First Name"
+  last_name: "Last Name"
+  fallback_name: "Name"

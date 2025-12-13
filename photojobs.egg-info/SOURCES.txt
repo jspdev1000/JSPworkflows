@@ -1,0 +1,16 @@
+README.md
+pyproject.toml
+./photojobs/__init__.py
+./photojobs/__main__.py
+./photojobs/cli.py
+./photojobs/commands/csvgen.py
+./photojobs/commands/keywords.py
+./photojobs/commands/rename.py
+./photojobs/commands/teams.py
+./photojobs/commands/verify.py
+./photojobs/lib/__init__.py
+./photojobs/lib/utils.py
+photojobs.egg-info/PKG-INFO
+photojobs.egg-info/SOURCES.txt
+photojobs.egg-info/dependency_links.txt
+photojobs.egg-info/top_level.txt
