@@ -247,27 +247,50 @@ def run(args) -> int:
         lastname, firstname = person_key.split("|")
         person_name = f"{firstname} {lastname}"
 
-        # Sort images by sequence number to find first
-        images_sorted = sorted(images, key=lambda x: x['sequence'])
-        first_image = images_sorted[0]
-
-        teamname = first_image['teamname']
-        spa_filename = first_image['spa']
-
         # Debug first 3 people
         debug_mode = (total_people <= 3)
         if debug_mode:
             print(f"DEBUG: Processing person {total_people}: {person_name}")
-            print(f"  Team: {teamname}, SPA: {spa_filename}, Sequence: {first_image['sequence']}")
+            print(f"  Total CSV records for this person: {len(images)}")
 
-        # Find the actual file
-        source_file = find_image_file(root_folder, spa_filename, debug=debug_mode)
+        # Find which files actually exist in the folder
+        existing_files = []
+        for img_data in images:
+            spa_filename = img_data['spa']
+            source_file = find_image_file(root_folder, spa_filename, debug=debug_mode)
+            if source_file:
+                existing_files.append({
+                    'path': source_file,
+                    'sequence': img_data['sequence'],
+                    'teamname': img_data['teamname'],
+                    'spa': spa_filename
+                })
+                if debug_mode:
+                    print(f"  Found existing file: {spa_filename} (seq: {img_data['sequence']})")
+            else:
+                if debug_mode:
+                    print(f"  File not found: {spa_filename}")
 
-        if not source_file:
+        # If no files exist for this person, skip
+        if not existing_files:
             missing_files += 1
-            people_without_photos.append(f"{person_name} (expected: {spa_filename})")
-            print(f"WARNING: Could not find file for {person_name}: {spa_filename}")
+            expected_list = ', '.join([img['spa'] for img in images[:3]])  # Show first 3
+            if len(images) > 3:
+                expected_list += f" ... ({len(images)} total)"
+            people_without_photos.append(f"{person_name} (expected: {expected_list})")
+            print(f"WARNING: No files found for {person_name} (checked {len(images)} CSV records)")
             continue
+
+        # Sort existing files by sequence number and pick the first
+        existing_files_sorted = sorted(existing_files, key=lambda x: x['sequence'])
+        first_file = existing_files_sorted[0]
+
+        source_file = first_file['path']
+        teamname = first_file['teamname']
+
+        if debug_mode:
+            print(f"  Selected first file: {first_file['spa']} (seq: {first_file['sequence']})")
+            print(f"  Team: {teamname}")
 
         # Create team subfolder
         team_folder = output_root / teamname
@@ -280,7 +303,7 @@ def run(args) -> int:
             shutil.copy2(source_file, dest_file)
             total_copied += 1
             team_stats[teamname] += 1
-            print(f"Copied: {person_name} ({first_image['sequence']}) -> {teamname}/{source_file.name}")
+            print(f"Copied: {person_name} ({first_file['sequence']}) -> {teamname}/{source_file.name}")
         except Exception as e:
             errors += 1
             error_msg = f"{person_name}: {e}"

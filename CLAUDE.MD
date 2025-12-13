@@ -125,11 +125,13 @@ python3 -m photojobs teams --csv "/path/file.csv" --root "/path/images" [--team-
 **Behavior**:
 - Reads CSV (typically the PNG output from csvgen)
 - Groups images by person (LASTNAME + FIRSTNAME)
-- For each person, identifies their FIRST image by 4-digit sequence number
+- **For each person, checks which files actually exist in the source folder**
+- **Identifies FIRST image from existing files by 4-digit sequence number**
 - Extracts sequence from filename (last 4-digit block, ignoring any suffix after it)
 - Copies first image for each person to team subfolders
 - If any people have no TEAMNAME, prompts ONCE for a default team name to apply to all
 - Creates team subfolders automatically in output directory
+- **Key: Determines first photo based on actual folder contents, not CSV order**
 
 **Sequence Number Extraction**:
 - Finds all 4+ digit sequences in filename
