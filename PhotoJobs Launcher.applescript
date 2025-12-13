@@ -27,14 +27,14 @@ if cmdName is "Run All" then
 	set rootPath to POSIX path of rootFolder
 	set manualKeywordDialog to display dialog "Enter an extra keyword to add to ALL images (leave blank for none):" default answer ""
 	set manualKeyword to text returned of manualKeywordDialog
-
+	
 	-- Extract job name from CSV filename
 	set AppleScript's text item delimiters to "/"
 	set csvFileName to last text item of csvPath
 	set AppleScript's text item delimiters to "."
 	set jobName to first text item of csvFileName
 	set AppleScript's text item delimiters to ""
-
+	
 	-- Detect preset
 	set presetName to ""
 	try
@@ -50,7 +50,7 @@ if cmdName is "Run All" then
 		if presetChoice is false then return
 		set presetName to item 1 of presetChoice
 	end if
-
+	
 	-- Derived paths
 	set parentFolder to do shell script "dirname " & quoted form of rootPath
 	set rootFolderName to do shell script "basename " & quoted form of rootPath
@@ -59,61 +59,61 @@ if cmdName is "Run All" then
 	set csvDir to do shell script "dirname " & quoted form of csvPath
 	set jpgCsvPath to csvDir & "/" & jobName & " DATA-JPG.csv"
 	set pngCsvPath to csvDir & "/" & jobName & " DATA-PNG.csv"
-
+	
 	-- Progress indicator
 	try
 		set progress total steps to 4
 		set progress completed steps to 0
 		set progress description to "Running PhotoJobs: Full Workflow"
 	end try
-
+	
 	-- Step 1: Keywords
 	try
 		set progress additional description to "Step 1/4: Applying keywords..."
 	end try
-
+	
 	if manualKeyword is not "" then
 		set cmd1 to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs keywords --csv " & quoted form of csvPath & " --root " & quoted form of rootPath & " --manual " & quoted form of manualKeyword & " --preset " & quoted form of presetName
 	else
 		set cmd1 to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs keywords --csv " & quoted form of csvPath & " --root " & quoted form of rootPath & " --preset " & quoted form of presetName
 	end if
-
+	
 	set result1 to do shell script cmd1
 	try
 		set progress completed steps to 1
 	end try
-
+	
 	-- Step 2: csvgen
 	try
 		set progress additional description to "Step 2/4: Generating CSV files..."
 	end try
-
+	
 	set cmd2 to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs csvgen --csv " & quoted form of csvPath & " --jobname " & quoted form of jobName
 	set result2 to do shell script cmd2
 	try
 		set progress completed steps to 2
 	end try
-
+	
 	-- Step 3: Rename
 	try
 		set progress additional description to "Step 3/4: Renaming files..."
 	end try
-
+	
 	set cmd3 to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs rename --root " & quoted form of keywordsPath & " --plan " & quoted form of jpgCsvPath & " --mode copy"
 	set result3 to do shell script cmd3
 	try
 		set progress completed steps to 3
 	end try
-
+	
 	-- Step 4: Teams
 	try
 		set progress additional description to "Step 4/4: Sorting into teams..."
 	end try
-
+	
 	-- Check if there are people without teams
 	set checkCmd to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -c \"import csv; f=open('" & pngCsvPath & "'); r=csv.DictReader(f); missing=sum(1 for row in r if not row.get('TEAMNAME', '').strip()); print(missing)\""
 	set missingCount to do shell script checkCmd
-
+	
 	if missingCount as integer > 0 then
 		set defaultTeamDialog to display dialog "There are " & missingCount & " people without a team. Enter a default team name for them:" default answer "NoTeam"
 		set defaultTeam to text returned of defaultTeamDialog
@@ -121,18 +121,18 @@ if cmdName is "Run All" then
 	else
 		set cmd4 to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs teams --csv " & quoted form of pngCsvPath & " --root " & quoted form of renamedPath & " --team-field TEAMNAME"
 	end if
-
+	
 	set result4 to do shell script cmd4
 	try
 		set progress completed steps to 4
 	end try
-
+	
 	-- Combine results
 	set resultText to "=== STEP 1: KEYWORDS ===" & return & result1 & return & return & "=== STEP 2: CSVGEN ===" & return & result2 & return & return & "=== STEP 3: RENAME ===" & return & result3 & return & return & "=== STEP 4: TEAMS ===" & return & result4
 	set summaryText to "Full workflow completed successfully!" & return & return & "Output locations:" & return & "- Keywords: " & keywordsPath & return & "- Renamed: " & renamedPath & return & "- CSV files: " & csvDir & return & "- Teams: " & parentFolder & "/_TeamIndSorted"
 	display dialog summaryText buttons {"OK"} default button 1 with title "PhotoJobs: Run All Complete"
 	return
-
+	
 else if cmdName is "keywords" then
 	set csvAlias to choose file with prompt "Select the CSV file:" of type {"public.comma-separated-values-text", "public.text"}
 	set csvPath to POSIX path of csvAlias
