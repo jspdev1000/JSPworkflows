@@ -60,7 +60,7 @@ def parse_filenames(raw: str) -> list[str]:
     cleaned = re.sub(r"[\r\n;|]+", ",", raw)
     return [f.strip() for chunk in cleaned.split(",") for f in chunk.split() if f.strip()]
 
-def process_csv(input_csv: Path, output_dir: Path):
+def process_csv(input_csv: Path, output_dir: Path, jobname: str = "phsdebate25-26", team_field: str = "Team"):
     all_rows = []
     jpg_rows = []
     png_rows = []
@@ -71,7 +71,7 @@ def process_csv(input_csv: Path, output_dir: Path):
 
         # Columns to remove
         columns_to_remove = {"Check-In Date", "Added With", "Photo Filenames", "Featured Photo"}
-        
+
         for row in reader:
             # Rename headers by creating new keys
             renamed_row = {}
@@ -80,19 +80,19 @@ def process_csv(input_csv: Path, output_dir: Path):
                     renamed_row["LASTNAME"] = value
                 elif key == "First Name":
                     renamed_row["FIRSTNAME"] = value
-                elif key == "Team":
+                elif key == team_field:
                     renamed_row["TEAMNAME"] = value
                 elif key not in columns_to_remove:
                     renamed_row[key] = value
-            
+
             # Add new columns
             firstname = renamed_row.get("FIRSTNAME", "")
             lastname = renamed_row.get("LASTNAME", "")
             renamed_row["NAME"] = f"{firstname} {lastname}".strip()
-            
+
             teamname = renamed_row.get("TEAMNAME", "")
             renamed_row["Team File"] = f"{teamname}.psb" if teamname else ""
-            
+
             photos = parse_filenames(row.get("Photo Filenames", ""))
             expanded_jpg, expanded_png = expand_rows(renamed_row, photos)
             jpg_rows.extend(expanded_jpg)
@@ -105,11 +105,11 @@ def process_csv(input_csv: Path, output_dir: Path):
             output_fieldnames.append("LASTNAME")
         elif fn == "First Name":
             output_fieldnames.append("FIRSTNAME")
-        elif fn == "Team":
+        elif fn == team_field:
             output_fieldnames.append("TEAMNAME")
         elif fn not in columns_to_remove and fn not in output_fieldnames:
             output_fieldnames.append(fn)
-    
+
     # Add new columns and processing columns
     output_fieldnames.extend(["NAME", "Team File", "FILENUMBER", "PHOTO", "NEWFILENAME"])
 
@@ -127,11 +127,45 @@ def process_csv(input_csv: Path, output_dir: Path):
             for row in rows:
                 writer.writerow([row.get("PHOTO", ""), row.get("SPA", "")])
 
-    write_csv("phsdebate25-26 DATA-JPG.csv", jpg_rows)
-    write_csv("phsdebate25-26 DATA-PNG.csv", png_rows)
-    write_csv("phsdebate25-26 DATA-ALL.csv", jpg_rows + png_rows)
-    write_rename_txt("phsdebate25-26 DATA-RENAME.txt", jpg_rows)
-    print("✅ Generated JPG, PNG, ALL CSVs and RENAME.txt with proper SPA filenames.")
+    write_csv(f"{jobname} DATA-JPG.csv", jpg_rows)
+    write_csv(f"{jobname} DATA-PNG.csv", png_rows)
+    write_csv(f"{jobname} DATA-ALL.csv", jpg_rows + png_rows)
+    write_rename_txt(f"{jobname} DATA-RENAME.txt", jpg_rows)
+    print(f"✅ Generated {jobname} DATA-JPG.csv, DATA-PNG.csv, DATA-ALL.csv and DATA-RENAME.txt with proper SPA filenames.")
+    print(f"   Output directory: {output_dir}")
+
+
+def run(args) -> int:
+    """PhotoJobs CLI entrypoint for the csvgen command."""
+    csv_path = Path(args.csv).expanduser().resolve()
+    jobname = args.jobname
+    team_field = args.team_field or "Team"
+
+    # Determine output directory
+    if args.outdir:
+        output_dir = Path(args.outdir).expanduser().resolve()
+    else:
+        output_dir = csv_path.parent
+
+    # Validate inputs
+    if not csv_path.exists():
+        print(f"ERROR: CSV file not found: {csv_path}")
+        return 1
+
+    # Create output directory if needed
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"Processing CSV: {csv_path}")
+    print(f"Job name: {jobname}")
+    print(f"Team field: {team_field}")
+    print(f"Output directory: {output_dir}")
+    print()
+
+    # Process the CSV
+    process_csv(csv_path, output_dir, jobname, team_field)
+
+    return 0
+
 
 if __name__ == "__main__":
     import argparse

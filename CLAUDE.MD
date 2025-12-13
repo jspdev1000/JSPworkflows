@@ -17,7 +17,7 @@ PhotoJobsTools is a Python CLI application designed to manage photo metadata and
 |---------|--------|-------|
 | keywords | ✅ Fully implemented | Production-ready, complex file matching logic |
 | verify | ⚠️ Stub only | Placeholder implementation |
-| csvgen | ⚠️ Standalone only | Implemented but not integrated into CLI (no run() function) |
+| csvgen | ✅ Fully implemented | Generates derived CSV outputs and rename plans |
 | rename | ⚠️ Stub only | Placeholder implementation |
 | teams | ✅ Fully implemented | Sorts first image per person into team subfolders |
 
@@ -72,12 +72,12 @@ python3 -m photojobs verify --root "/path/source" [--out "/path/output"]
 
 **Usage**:
 ```bash
-python3 -m photojobs csvgen --csv "/path/file.csv" --root "/path/originals" --jobname "JobName" [--team-field "Team"] [--outdir "/path/output"]
+python3 -m photojobs csvgen --csv "/path/file.csv" --jobname "JobName" [--team-field "Team"] [--outdir "/path/output"]
 ```
 
 **Behavior**:
-- Reads PhotoDay-format CSV with subject information
-- Renames columns: "Last Name" → "LASTNAME", "First Name" → "FIRSTNAME", "Team" → "TEAMNAME"
+- Reads PhotoDay-format CSV with subject information (pure data processing - no image files needed)
+- Renames columns: "Last Name" → "LASTNAME", "First Name" → "FIRSTNAME", team field → "TEAMNAME"
 - Removes columns: "Check-In Date", "Added With", "Photo Filenames", "Featured Photo"
 - Adds new columns: "NAME" (First + Last), "Team File" (e.g., "TeamName.psb")
 - Parses "Photo Filenames" field (supports multiple filenames per subject)
@@ -91,12 +91,11 @@ python3 -m photojobs csvgen --csv "/path/file.csv" --root "/path/originals" --jo
 - `<jobname> DATA-ALL.csv` - Combined JPG + PNG rows
 - `<jobname> DATA-RENAME.txt` - Tab-delimited rename plan (original → new filename)
 
-**Status**: Implemented but not integrated - csvgen.py has a standalone main() but no run() function for CLI integration
+**Default output**: Same directory as input CSV (unless `--outdir` specified)
 
 **Notes**:
-- Currently has hardcoded job name "phsdebate25-26" in output filenames (csvgen.py:130-133)
-- Can be run standalone: `python3 photojobs/commands/csvgen.py <csv> <outdir>`
-- Not callable via `python3 -m photojobs csvgen` (cli.py:58 will fail - no run() function)
+- Can still be run standalone: `python3 photojobs/commands/csvgen.py <csv> <outdir>`
+- Team field name is configurable via `--team-field` (defaults to "Team")
 
 **Implementation**: `photojobs/commands/csvgen.py`
 
@@ -238,21 +237,19 @@ python3 -m photojobs keywords --csv job.csv --root ./originals --manual "Spring2
 # 2. Verify keywords were applied (NOT YET IMPLEMENTED)
 # python3 -m photojobs verify --root ./originals
 
-# 3. Generate team assignments and rename plan (USE STANDALONE)
-python3 photojobs/commands/csvgen.py job.csv ./output
+# 3. Generate team assignments and rename plan
+python3 -m photojobs csvgen --csv job.csv --jobname "MyJob2025"
 
 # 4. Sort into team folders
-python3 -m photojobs teams --csv "./output/jobname DATA-PNG.csv" --root ./images_folder
+python3 -m photojobs teams --csv "MyJob2025 DATA-PNG.csv" --root ./images_folder
 ```
 
 ## Known Issues & TODOs
 
-1. **csvgen CLI integration**: csvgen.py needs a `run(args)` function to work with the CLI router (cli.py:58)
-2. **Hardcoded job names**: csvgen.py has hardcoded output filenames "phsdebate25-26" instead of using --jobname argument
-3. **Stub implementations**: verify and rename commands need full implementation
-4. **Hardcoded temp path**: Keywords command uses macOS-specific temp directory `/Users/jerry/Pictures/PhotoJobs/scripts/_Files/TempAddKeyword`
-5. **lib/utils.py empty**: No shared utilities implemented yet
-6. **Preset system not implemented**: The --preset flag is accepted but YAML preset files in `presets/` are not loaded or used. CSV format detection is hardcoded in keywords.py
+1. **Stub implementations**: verify and rename commands need full implementation
+2. **Hardcoded temp path**: Keywords command uses macOS-specific temp directory `/Users/jerry/Pictures/PhotoJobs/scripts/_Files/TempAddKeyword`
+3. **lib/utils.py empty**: No shared utilities implemented yet
+4. **Preset system not implemented**: The --preset flag is accepted but YAML preset files in `presets/` are not loaded or used. CSV format detection is hardcoded in keywords.py
 
 ## Important Notes
 
@@ -261,5 +258,6 @@ python3 -m photojobs teams --csv "./output/jobname DATA-PNG.csv" --root ./images
 - Output folders preserve the original directory structure
 - Detailed failure logs are generated for troubleshooting
 - The tool handles multiple CSV formats for backward compatibility
-- Production-ready commands: `keywords`, `teams`
+- Production-ready commands: `keywords`, `csvgen`, `teams`
 - The `teams` command prompts once per execution for a default team name if any people lack TEAMNAME values
+- The `csvgen` command is pure data processing - no image files needed
