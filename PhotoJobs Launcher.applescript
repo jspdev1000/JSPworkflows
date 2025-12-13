@@ -36,7 +36,7 @@ if cmdName is "keywords" then
 			set presetName to "legacy"
 		end if
 	end try
-
+	
 	-- Fallback to prompt if unknown
 	if presetName is "" then
 		set presetChoice to choose from list {"photoday", "legacy"} with prompt "Choose preset:" default items {"photoday"}
@@ -73,11 +73,11 @@ else if cmdName is "teams" then
 	set csvPath to POSIX path of csvAlias
 	set rootFolder to choose folder with prompt "Select the folder containing PNG images:"
 	set rootPath to POSIX path of rootFolder
-
+	
 	-- Check if there are people without teams
 	set checkCmd to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -c \"import csv; f=open('" & csvPath & "'); r=csv.DictReader(f); missing=sum(1 for row in r if not row.get('TEAMNAME', '').strip()); print(missing)\""
 	set missingCount to do shell script checkCmd
-
+	
 	if missingCount as integer > 0 then
 		set defaultTeamDialog to display dialog "There are " & missingCount & " people without a team. Enter a default team name for them:" default answer "NoTeam"
 		set defaultTeam to text returned of defaultTeamDialog
