@@ -18,7 +18,7 @@ PhotoJobsTools is a Python CLI application designed to manage photo metadata and
 | keywords | ✅ Fully implemented | Production-ready, complex file matching logic |
 | verify | ⚠️ Stub only | Placeholder implementation |
 | csvgen | ✅ Fully implemented | Generates derived CSV outputs and rename plans |
-| rename | ⚠️ Stub only | Placeholder implementation |
+| rename | ✅ Fully implemented | CSV-based file renaming with one-to-many support |
 | teams | ✅ Fully implemented | Sorts first image per person into team subfolders |
 
 ## Commands
@@ -86,10 +86,10 @@ python3 -m photojobs csvgen --csv "/path/file.csv" --jobname "JobName" [--team-f
 - Extracts 4-digit file numbers from original filenames
 
 **Outputs**:
-- `<jobname> DATA-JPG.csv` - All subjects with .jpg extension
-- `<jobname> DATA-PNG.csv` - All subjects with .png extension
+- `<jobname> DATA-JPG.csv` - All subjects with .jpg extension (includes PHOTO and NEWFILENAME columns for rename command)
+- `<jobname> DATA-PNG.csv` - All subjects with .png extension (includes TEAMNAME column for teams command)
 - `<jobname> DATA-ALL.csv` - Combined JPG + PNG rows
-- `<jobname> DATA-RENAME.txt` - Tab-delimited rename plan (original → new filename)
+- `<jobname> DATA-RENAME.txt` - Tab-delimited rename plan (original → new filename) - legacy format
 
 **Default output**: Same directory as input CSV (unless `--outdir` specified)
 
@@ -100,16 +100,42 @@ python3 -m photojobs csvgen --csv "/path/file.csv" --jobname "JobName" [--team-f
 **Implementation**: `photojobs/commands/csvgen.py`
 
 ### 4. rename
-**Purpose**: Rules-based file renaming using a plan file
+**Purpose**: Apply systematic file renaming using a CSV plan
 
 **Usage**:
 ```bash
-python3 -m photojobs rename --root "/path/source" --plan "/path/plan.txt" [--mode copy|move]
+python3 -m photojobs rename --root "/path/source" --plan "/path/DATA-JPG.csv" [--mode copy|move]
 ```
 
-**Default mode**: copy (safer than move)
+**Behavior**:
+- Reads CSV with PHOTO (source filename) and NEWFILENAME (destination filename) columns
+- Finds source files in root directory (matches by stem, ignores extension)
+- Supports one-to-many mapping: one source file can be copied to multiple destinations
+- Copies or moves files to output directory with new names
+- Preserves file extension from source file
+- Default mode is copy (safer than move)
+- Output directory: `<root>_renamed`
 
-**Status**: STUB - Not yet implemented
+**File Matching**:
+- Matches files by stem (ignoring extension)
+- Tries exact match first with common extensions (.jpg, .JPG, .jpeg, .JPEG, .png, .PNG)
+- Falls back to recursive search if exact match not found
+- Uses cache to avoid repeated searches for same source file
+
+**One-to-Many Support**:
+- A single source file can map to multiple destination filenames in the CSV
+- All destinations are copied from the same source
+- In move mode, only the last destination actually moves the file (others are copied)
+- Shows progress with "(1/3)", "(2/3)", etc. for multiple destinations
+
+**Summary Output**:
+- Total unique source files
+- Total destination files (may exceed source count due to one-to-many)
+- Successfully processed files
+- Missing source files (with list)
+- Errors encountered (with details)
+
+**Default mode**: copy (safer than move)
 
 **Implementation**: `photojobs/commands/rename.py`
 
@@ -229,7 +255,7 @@ The `presets/` directory contains YAML configuration files for different CSV for
 
 ## Common Workflows
 
-### Standard PhotoDay Workflow
+### Standard PhotoDay Workflow (Manual)
 ```bash
 # 1. Apply keywords from CSV
 python3 -m photojobs keywords --csv job.csv --root ./originals --manual "Spring2024"
@@ -240,13 +266,40 @@ python3 -m photojobs keywords --csv job.csv --root ./originals --manual "Spring2
 # 3. Generate team assignments and rename plan
 python3 -m photojobs csvgen --csv job.csv --jobname "MyJob2025"
 
-# 4. Sort into team folders
-python3 -m photojobs teams --csv "MyJob2025 DATA-PNG.csv" --root ./images_folder
+# 4. Rename files using the JPG CSV
+python3 -m photojobs rename --root ./originals_keywords --plan "MyJob2025 DATA-JPG.csv" --mode copy
+
+# 5. Sort into team folders using the PNG CSV
+python3 -m photojobs teams --csv "MyJob2025 DATA-PNG.csv" --root ./originals_keywords_renamed
 ```
+
+### "Run All" Automated Workflow (AppleScript Launcher)
+
+The AppleScript launcher includes a "Run All" option that automates the complete workflow:
+
+**Sequence**:
+1. **Keywords**: Apply keywords to originals → `<root>_keywords/`
+2. **Csvgen**: Generate JPG/PNG CSVs and rename plan
+3. **Rename**: Use JPG CSV to rename `<root>_keywords/` → `<root>_keywords_renamed/`
+4. **Teams**: Use PNG CSV to sort `<root>_keywords_renamed/` → `_TeamIndSorted/`
+
+**Features**:
+- Single initial prompt for CSV, root folder, and manual keyword
+- Automatically derives all intermediate paths and filenames
+- Progress indicator shows 4 steps with current step
+- Detects preset from CSV headers (photoday vs legacy)
+- Handles team assignment prompts if needed
+- Final summary shows all output locations
+
+**Output locations**:
+- Keywords output: `<root>_keywords/`
+- Renamed files: `<root>_keywords_renamed/`
+- CSV files: Same directory as input CSV
+- Team folders: `_TeamIndSorted/` (in parent of root folder)
 
 ## Known Issues & TODOs
 
-1. **Stub implementations**: verify and rename commands need full implementation
+1. **Stub implementation**: verify command needs full implementation
 2. **Hardcoded temp path**: Keywords command uses macOS-specific temp directory `/Users/jerry/Pictures/PhotoJobs/scripts/_Files/TempAddKeyword`
 3. **lib/utils.py empty**: No shared utilities implemented yet
 4. **Preset system not implemented**: The --preset flag is accepted but YAML preset files in `presets/` are not loaded or used. CSV format detection is hardcoded in keywords.py
@@ -258,6 +311,7 @@ python3 -m photojobs teams --csv "MyJob2025 DATA-PNG.csv" --root ./images_folder
 - Output folders preserve the original directory structure
 - Detailed failure logs are generated for troubleshooting
 - The tool handles multiple CSV formats for backward compatibility
-- Production-ready commands: `keywords`, `csvgen`, `teams`
+- Production-ready commands: `keywords`, `csvgen`, `rename`, `teams`
 - The `teams` command prompts once per execution for a default team name if any people lack TEAMNAME values
 - The `csvgen` command is pure data processing - no image files needed
+- The AppleScript launcher provides both individual command access and a "Run All" automated workflow
