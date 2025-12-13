@@ -102,6 +102,31 @@ if cmdName is "Run All" then
 		set presetName to item 1 of presetChoice
 	end if
 	
+	-- Detect batches from CSV to prompt for suffixes
+	set batchDetectCmd to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -c \"import csv; from pathlib import Path; import re; f=open('" & csvPath & "'); r=csv.DictReader(f); photos=set(); [photos.add(row.get('Photo Filenames','')) for row in r if row.get('Photo Filenames')]; batches=set(); [batches.add(re.match(r'^([A-Za-z]+)(\\\\d{2})',Path(p.split()[0]).stem).group(1)+re.match(r'^([A-Za-z]+)(\\\\d{2})',Path(p.split()[0]).stem).group(2)) for p in photos if p and re.match(r'^([A-Za-z]+)(\\\\d{2})',Path(p.split()[0]).stem)]; print(','.join(sorted(batches)))\""
+
+	set batchSuffixes to ""
+	try
+		set batchList to do shell script batchDetectCmd
+		if batchList is not "" and batchList does not contain "UNKNOWN" then
+			set AppleScript's text item delimiters to ","
+			set batches to text items of batchList
+			set AppleScript's text item delimiters to ""
+
+			if (count of batches) > 1 then
+				set suffixList to {}
+				repeat with batchName in batches
+					set suffixDialog to display dialog "Enter suffix for batch " & batchName & " (will be added before extension, e.g., _indiv):" default answer ""
+					set batchSuffix to text returned of suffixDialog
+					set end of suffixList to batchName & ":" & batchSuffix
+				end repeat
+				set AppleScript's text item delimiters to ","
+				set batchSuffixes to suffixList as string
+				set AppleScript's text item delimiters to ""
+			end if
+		end if
+	end try
+
 	-- Derived paths
 	set parentFolder to do shell script "dirname " & quoted form of rootPath
 	set rootFolderName to do shell script "basename " & quoted form of rootPath
@@ -110,101 +135,59 @@ if cmdName is "Run All" then
 	set csvDir to do shell script "dirname " & quoted form of csvPath
 	set jpgCsvPath to csvDir & "/" & jobName & " DATA-JPG.csv"
 	set pngCsvPath to csvDir & "/" & jobName & " DATA-PNG.csv"
-	
-	-- Progress indicator
+
+	-- Progress indicator (3 steps now, teams removed)
 	try
-		set progress total steps to 4
+		set progress total steps to 3
 		set progress completed steps to 0
-		set progress description to "Running PhotoJobs: Full Workflow"
+		set progress description to "Running PhotoJobs: Keywords + CSV + Rename"
 	end try
 	
 	-- Step 1: Keywords
 	try
-		set progress additional description to "Step 1/4: Applying keywords..."
+		set progress additional description to "Step 1/3: Applying keywords..."
 	end try
-	
+
 	if manualKeyword is not "" then
 		set cmd1 to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs keywords --csv " & quoted form of csvPath & " --root " & quoted form of rootPath & " --manual " & quoted form of manualKeyword & " --preset " & quoted form of presetName
 	else
 		set cmd1 to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs keywords --csv " & quoted form of csvPath & " --root " & quoted form of rootPath & " --preset " & quoted form of presetName
 	end if
-	
+
 	set result1 to do shell script cmd1
 	try
 		set progress completed steps to 1
 	end try
-	
+
 	-- Step 2: csvgen
 	try
-		set progress additional description to "Step 2/4: Generating CSV files..."
+		set progress additional description to "Step 2/3: Generating CSV files..."
 	end try
-	
-	set cmd2 to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs csvgen --csv " & quoted form of csvPath & " --jobname " & quoted form of jobName
+
+	if batchSuffixes is not "" then
+		set cmd2 to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs csvgen --csv " & quoted form of csvPath & " --jobname " & quoted form of jobName & " --batch-suffixes " & quoted form of batchSuffixes
+	else
+		set cmd2 to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs csvgen --csv " & quoted form of csvPath & " --jobname " & quoted form of jobName
+	end if
 	set result2 to do shell script cmd2
 	try
 		set progress completed steps to 2
 	end try
-	
+
 	-- Step 3: Rename
 	try
-		set progress additional description to "Step 3/4: Renaming files..."
+		set progress additional description to "Step 3/3: Renaming files..."
 	end try
-	
+
 	set cmd3 to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs rename --root " & quoted form of keywordsPath & " --plan " & quoted form of jpgCsvPath & " --mode copy"
 	set result3 to do shell script cmd3
 	try
 		set progress completed steps to 3
 	end try
-	
-	-- Step 4: Teams
-	try
-		set progress additional description to "Step 4/4: Sorting into teams..."
-	end try
-	
-	-- Check for multiple batches
-	set batchCheckCmd to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -c \"import csv; f=open('" & pngCsvPath & "'); r=csv.DictReader(f); batches=set(row.get('BATCH','UNKNOWN') for row in r); print(len(batches), ','.join(sorted(batches)))\""
-	set batchInfo to do shell script batchCheckCmd
-	set AppleScript's text item delimiters to " "
-	set batchParts to text items of batchInfo
-	set batchCount to item 1 of batchParts as integer
-	set AppleScript's text item delimiters to ""
-	
-	-- Check if there are people without teams
-	set checkCmd to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -c \"import csv; f=open('" & pngCsvPath & "'); r=csv.DictReader(f); missing=sum(1 for row in r if not row.get('TEAMNAME', '').strip()); print(missing)\""
-	set missingCount to do shell script checkCmd
-	
-	-- Build input for teams command (may need batch selection and/or default team)
-	set teamsInput to ""
-	
-	-- Handle batch selection if multiple batches
-	if batchCount > 1 then
-		set batchDialog to display dialog "Multiple image batches detected in CSV. Which batch should be used for team selection?" & return & return & batchInfo & return & return & "Enter batch number (or 'all' for all batches):" default answer "1"
-		set batchChoice to text returned of batchDialog
-		set teamsInput to batchChoice & return
-	end if
-	
-	-- Handle missing team names
-	if missingCount as integer > 0 then
-		set defaultTeamDialog to display dialog "There are " & missingCount & " people without a team. Enter a default team name for them:" default answer "NoTeam"
-		set defaultTeam to text returned of defaultTeamDialog
-		set teamsInput to teamsInput & defaultTeam & return
-	end if
-	
-	-- Run teams command
-	if teamsInput is not "" then
-		set cmd4 to "cd " & quoted form of toolsFolder & " && echo " & quoted form of teamsInput & " | /usr/bin/python3 -m photojobs teams --csv " & quoted form of pngCsvPath & " --root " & quoted form of renamedPath & " --team-field TEAMNAME"
-	else
-		set cmd4 to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs teams --csv " & quoted form of pngCsvPath & " --root " & quoted form of renamedPath & " --team-field TEAMNAME"
-	end if
-	
-	set result4 to do shell script cmd4
-	try
-		set progress completed steps to 4
-	end try
-	
+
 	-- Combine results
-	set resultText to "=== STEP 1: KEYWORDS ===" & return & result1 & return & return & "=== STEP 2: CSVGEN ===" & return & result2 & return & return & "=== STEP 3: RENAME ===" & return & result3 & return & return & "=== STEP 4: TEAMS ===" & return & result4
-	set summaryText to "Full workflow completed successfully!" & return & return & "Output locations:" & return & "- Keywords: " & keywordsPath & return & "- Renamed: " & renamedPath & return & "- CSV files: " & csvDir & return & "- Teams: " & parentFolder & "/_TeamIndSorted"
+	set resultText to "=== STEP 1: KEYWORDS ===" & return & result1 & return & return & "=== STEP 2: CSVGEN ===" & return & result2 & return & return & "=== STEP 3: RENAME ===" & return & result3
+	set summaryText to "Workflow completed successfully!" & return & return & "Output locations:" & return & "- Keywords: " & keywordsPath & return & "- Renamed: " & renamedPath & return & "- CSV files: " & csvDir & return & return & "Next step: Run 'teams' command separately with PNG files"
 	display dialog summaryText buttons {"OK"} default button 1 with title "PhotoJobs: Run All Complete"
 	return
 	
