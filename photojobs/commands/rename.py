@@ -1,11 +1,12 @@
-"""Rename command - Apply systematic file renaming using a plan file.
+"""Rename command - Apply systematic file renaming using a CSV plan.
 
 Usage:
-    python3 -m photojobs rename --root /path/to/source --plan /path/to/plan.txt [--mode copy|move]
+    python3 -m photojobs rename --root /path/to/source --plan /path/to/DATA-JPG.csv [--mode copy|move]
 
 Behavior:
-- Reads tab-delimited rename plan (old_name -> new_name)
+- Reads CSV with PHOTO (source) and NEWFILENAME (destination) columns
 - Finds source files in root directory (matches by stem, ignores extension)
+- Supports one-to-many: one source file can be copied to multiple destinations
 - Copies or moves files to output directory with new names
 - Default mode is copy (safer than move)
 - Output directory: <root>_renamed
@@ -15,6 +16,7 @@ import csv
 import shutil
 from pathlib import Path
 from typing import Dict, List, Optional
+from collections import defaultdict
 
 __all__ = ["run"]
 
@@ -76,27 +78,44 @@ def run(args) -> int:
         return 1
 
     print(f"DEBUG: Source root: {root_folder}")
-    print(f"DEBUG: Rename plan: {plan_file}")
+    print(f"DEBUG: Rename plan CSV: {plan_file}")
     print(f"DEBUG: Output folder: {output_root}")
     print(f"DEBUG: Mode: {mode}")
     print()
 
-    # Read rename plan
-    rename_plan: List[tuple[str, str]] = []
-    with plan_file.open("r", newline="", encoding="utf-8-sig") as f:
-        reader = csv.reader(f, delimiter="\t")
-        for row in reader:
-            if len(row) >= 2:
-                old_name = row[0].strip()
-                new_name = row[1].strip()
-                if old_name and new_name:
-                    rename_plan.append((old_name, new_name))
+    # Read CSV and build rename map (one source -> multiple destinations)
+    # Key: PHOTO (source filename), Value: list of NEWFILENAME (destination filenames)
+    rename_map: Dict[str, List[str]] = defaultdict(list)
 
-    if not rename_plan:
-        print("ERROR: No valid rename entries found in plan file")
+    with plan_file.open("r", newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames or []
+
+        # Verify required columns
+        if "PHOTO" not in fieldnames or "NEWFILENAME" not in fieldnames:
+            print(f"ERROR: CSV must contain 'PHOTO' and 'NEWFILENAME' columns")
+            print(f"Available columns: {', '.join(fieldnames)}")
+            return 1
+
+        for row in reader:
+            photo = (row.get("PHOTO") or "").strip()
+            newfilename = (row.get("NEWFILENAME") or "").strip()
+
+            if photo and newfilename:
+                rename_map[photo].append(newfilename)
+
+    if not rename_map:
+        print("ERROR: No valid rename entries found in CSV")
         return 1
 
-    print(f"Loaded {len(rename_plan)} rename operations from plan")
+    # Count total operations (sum of all destination files)
+    total_dest_files = sum(len(destinations) for destinations in rename_map.values())
+    unique_sources = len(rename_map)
+
+    print(f"Loaded rename plan:")
+    print(f"  Unique source files: {unique_sources}")
+    print(f"  Total destination files: {total_dest_files}")
+    print(f"  One-to-many mappings: {sum(1 for dests in rename_map.values() if len(dests) > 1)}")
     print()
 
     # Create output directory
@@ -107,61 +126,77 @@ def run(args) -> int:
     # Process renames
     total_operations = 0
     successful = 0
-    missing_files = 0
+    missing_sources = 0
     errors = 0
     missing_list: List[str] = []
     error_list: List[str] = []
 
-    for idx, (old_name, new_name) in enumerate(rename_plan, start=1):
-        total_operations += 1
-        debug_mode = (idx <= 3)  # Debug first 3
+    # Cache for found source files (to avoid repeated searches)
+    source_file_cache: Dict[str, Optional[Path]] = {}
+
+    for source_idx, (source_name, dest_names) in enumerate(rename_map.items(), start=1):
+        debug_mode = (source_idx <= 3)  # Debug first 3 sources
 
         if debug_mode:
-            print(f"DEBUG: Operation {idx}: {old_name} -> {new_name}")
+            print(f"DEBUG: Source {source_idx}: {source_name} -> {len(dest_names)} destination(s)")
 
-        # Find source file
-        source_file = find_source_file(root_folder, old_name, debug=debug_mode)
+        # Find source file (use cache if already found)
+        if source_name not in source_file_cache:
+            source_file_cache[source_name] = find_source_file(root_folder, source_name, debug=debug_mode)
+
+        source_file = source_file_cache[source_name]
 
         if not source_file:
-            missing_files += 1
-            missing_list.append(old_name)
-            print(f"WARNING: Source file not found: {old_name}")
+            missing_sources += 1
+            missing_list.append(source_name)
+            print(f"WARNING: Source file not found: {source_name}")
+            # Skip all destinations for this source
+            total_operations += len(dest_names)
             continue
 
-        # Determine destination
-        # Preserve the extension from the source file
-        new_name_path = Path(new_name)
-        new_name_with_ext = new_name_path.stem + source_file.suffix
-        dest_file = output_root / new_name_with_ext
+        # Process each destination for this source
+        for dest_idx, dest_name in enumerate(dest_names, start=1):
+            total_operations += 1
 
-        # Perform operation
-        try:
-            if mode == "move":
-                shutil.move(str(source_file), str(dest_file))
-                action = "Moved"
-            else:  # copy
-                shutil.copy2(source_file, dest_file)
-                action = "Copied"
+            # Preserve the extension from the source file
+            dest_name_path = Path(dest_name)
+            dest_name_with_ext = dest_name_path.stem + source_file.suffix
+            dest_file = output_root / dest_name_with_ext
 
-            successful += 1
-            if idx <= 10 or (idx % 100 == 0):  # Show first 10, then every 100th
-                print(f"{action}: {source_file.name} -> {new_name_with_ext}")
+            # Perform operation
+            try:
+                # Always copy (even in move mode) for one-to-many
+                # Only the last destination in move mode should actually move
+                if mode == "move" and dest_idx == len(dest_names):
+                    shutil.move(str(source_file), str(dest_file))
+                    action = "Moved"
+                else:
+                    shutil.copy2(source_file, dest_file)
+                    action = "Copied"
 
-        except Exception as e:
-            errors += 1
-            error_msg = f"{old_name}: {e}"
-            error_list.append(error_msg)
-            print(f"ERROR: Failed to {mode} {old_name}: {e}")
+                successful += 1
+                if source_idx <= 5 or (total_operations % 100 == 0):  # Show first 5 sources, then every 100th
+                    if len(dest_names) > 1:
+                        print(f"{action}: {source_file.name} -> {dest_name_with_ext} ({dest_idx}/{len(dest_names)})")
+                    else:
+                        print(f"{action}: {source_file.name} -> {dest_name_with_ext}")
+
+            except Exception as e:
+                errors += 1
+                error_msg = f"{source_name} -> {dest_name}: {e}"
+                error_list.append(error_msg)
+                print(f"ERROR: Failed to {mode} {source_name} to {dest_name}: {e}")
 
     # Summary
     print()
     print("=== Summary ===")
-    print(f"Total operations in plan:   {total_operations}")
-    print(f"Successfully {mode}d:        {successful}")
+    print(f"Total source files:         {unique_sources}")
+    print(f"Total destination files:    {total_dest_files}")
+    print(f"Successfully processed:     {successful}")
     print()
 
-    if missing_files > 0:
-        print(f"Missing source files: {missing_files}")
+    if missing_sources > 0:
+        print(f"Missing source files: {missing_sources}")
         for filename in missing_list[:10]:  # Show first 10
             print(f"  - {filename}")
         if len(missing_list) > 10:
