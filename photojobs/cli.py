@@ -28,6 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--jobname", required=True, help="Job name used in output filenames")
     c.add_argument("--team-field", default="Team", help="Column name for team")
     c.add_argument("--outdir", default="", help="Output directory (defaults to same dir as input csv)")
+    c.add_argument("--batch-suffixes", default="", help="Batch suffix mappings (format: BATCH1:_suffix1,BATCH2:_suffix2)")
 
     # rename
     r = sub.add_parser("rename", help="Rules-based rename using a plan; default mode is copy")

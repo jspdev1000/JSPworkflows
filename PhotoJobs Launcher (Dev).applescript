@@ -1,14 +1,65 @@
--- PhotoJobs Launcher (template)
--- Runs from the PhotoJobsTools folder and calls: python3 -m photojobs <command>
+-- PhotoJobs Launcher (Dev Version with Branch Selection)
+-- Allows selecting between main repo and worktrees for testing
 
-set toolsFolder to POSIX path of ((path to me) as text)
-set toolsFolder to POSIX path of ((POSIX file toolsFolder) as alias)
-set AppleScript's text item delimiters to "/"
-set folderParts to text items of toolsFolder
-set AppleScript's text item delimiters to "/"
-set toolsFolder to (items 1 thru -2 of folderParts) as string
-set toolsFolder to "/" & toolsFolder
+-- Detect available branches/worktrees
+set mainRepoPath to "/Users/jerry/Pictures/PhotoJobs/scripts/PhotoJobsTools"
+set worktreesBasePath to "/Users/jerry/.claude-worktrees/PhotoJobsTools"
 
+-- Build list of available locations
+set locationList to {}
+set locationPaths to {}
+
+-- Check if main repo exists
+try
+	do shell script "test -d " & quoted form of mainRepoPath
+	set end of locationList to "Main Repository (current branch)"
+	set end of locationPaths to mainRepoPath
+end try
+
+-- Find all worktrees
+try
+	set worktreeDirs to paragraphs of (do shell script "ls -1 " & quoted form of worktreesBasePath & " 2>/dev/null || true")
+	repeat with dirName in worktreeDirs
+		if dirName is not "" then
+			set worktreePath to worktreesBasePath & "/" & dirName
+			-- Get branch name from the worktree
+			try
+				set branchName to do shell script "cd " & quoted form of worktreePath & " && git branch --show-current"
+				set end of locationList to "Worktree: " & branchName & " (" & dirName & ")"
+				set end of locationPaths to worktreePath
+			end try
+		end if
+	end repeat
+end try
+
+-- Prompt user to select location
+if (count of locationList) = 0 then
+	display dialog "No PhotoJobsTools repositories found!" buttons {"OK"} default button 1 with icon stop
+	return
+end if
+
+set chosenLocation to choose from list locationList with prompt "Select which version of PhotoJobsTools to use:" default items {item 1 of locationList}
+if chosenLocation is false then return
+
+-- Find the corresponding path
+set chosenIndex to 0
+repeat with i from 1 to count of locationList
+	if item i of locationList is equal to item 1 of chosenLocation then
+		set chosenIndex to i
+		exit repeat
+	end if
+end repeat
+
+set toolsFolder to item chosenIndex of locationPaths
+
+-- Display confirmation
+try
+	set currentBranch to do shell script "cd " & quoted form of toolsFolder & " && git branch --show-current"
+	display dialog "Using: " & toolsFolder & return & "Branch: " & currentBranch buttons {"Continue", "Cancel"} default button 1
+	if button returned of result is "Cancel" then return
+end try
+
+-- Rest of the script is identical to the original launcher
 set taskList to {"Run All", "keywords", "verify", "csvgen", "rename", "teams"}
 set chosenTask to choose from list taskList with prompt "Choose PhotoJobs task:" default items {"Run All"}
 if chosenTask is false then return
@@ -53,7 +104,7 @@ if cmdName is "Run All" then
 	
 	-- Detect batches from CSV to prompt for suffixes
 	set batchDetectCmd to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -c \"import csv; from pathlib import Path; import re; f=open('" & csvPath & "'); r=csv.DictReader(f); photos=set(); [photos.add(row.get('Photo Filenames','')) for row in r if row.get('Photo Filenames')]; batches=set(); [batches.add(re.match(r'^([A-Za-z]+)(\\\\d{2})',Path(p.split()[0]).stem).group(1)+re.match(r'^([A-Za-z]+)(\\\\d{2})',Path(p.split()[0]).stem).group(2)) for p in photos if p and re.match(r'^([A-Za-z]+)(\\\\d{2})',Path(p.split()[0]).stem)]; print(','.join(sorted(batches)))\""
-
+	
 	set batchSuffixes to ""
 	try
 		set batchList to do shell script batchDetectCmd
@@ -61,7 +112,7 @@ if cmdName is "Run All" then
 			set AppleScript's text item delimiters to ","
 			set batches to text items of batchList
 			set AppleScript's text item delimiters to ""
-
+			
 			if (count of batches) > 1 then
 				set suffixList to {}
 				repeat with batchName in batches
@@ -75,7 +126,7 @@ if cmdName is "Run All" then
 			end if
 		end if
 	end try
-
+	
 	-- Derived paths
 	set parentFolder to do shell script "dirname " & quoted form of rootPath
 	set rootFolderName to do shell script "basename " & quoted form of rootPath
@@ -84,7 +135,7 @@ if cmdName is "Run All" then
 	set csvDir to do shell script "dirname " & quoted form of csvPath
 	set jpgCsvPath to csvDir & "/" & jobName & " DATA-JPG.csv"
 	set pngCsvPath to csvDir & "/" & jobName & " DATA-PNG.csv"
-
+	
 	-- Progress indicator (3 steps now, teams removed)
 	try
 		set progress total steps to 3
@@ -96,23 +147,23 @@ if cmdName is "Run All" then
 	try
 		set progress additional description to "Step 1/3: Applying keywords..."
 	end try
-
+	
 	if manualKeyword is not "" then
 		set cmd1 to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs keywords --csv " & quoted form of csvPath & " --root " & quoted form of rootPath & " --manual " & quoted form of manualKeyword & " --preset " & quoted form of presetName
 	else
 		set cmd1 to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs keywords --csv " & quoted form of csvPath & " --root " & quoted form of rootPath & " --preset " & quoted form of presetName
 	end if
-
+	
 	set result1 to do shell script cmd1
 	try
 		set progress completed steps to 1
 	end try
-
+	
 	-- Step 2: csvgen
 	try
 		set progress additional description to "Step 2/3: Generating CSV files..."
 	end try
-
+	
 	if batchSuffixes is not "" then
 		set cmd2 to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs csvgen --csv " & quoted form of csvPath & " --jobname " & quoted form of jobName & " --batch-suffixes " & quoted form of batchSuffixes
 	else
@@ -122,18 +173,18 @@ if cmdName is "Run All" then
 	try
 		set progress completed steps to 2
 	end try
-
+	
 	-- Step 3: Rename
 	try
 		set progress additional description to "Step 3/3: Renaming files..."
 	end try
-
+	
 	set cmd3 to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs rename --root " & quoted form of keywordsPath & " --plan " & quoted form of jpgCsvPath & " --mode copy"
 	set result3 to do shell script cmd3
 	try
 		set progress completed steps to 3
 	end try
-
+	
 	-- Combine results
 	set resultText to "=== STEP 1: KEYWORDS ===" & return & result1 & return & return & "=== STEP 2: CSVGEN ===" & return & result2 & return & return & "=== STEP 3: RENAME ===" & return & result3
 	set summaryText to "Workflow completed successfully!" & return & return & "Output locations:" & return & "- Keywords: " & keywordsPath & return & "- Renamed: " & renamedPath & return & "- CSV files: " & csvDir & return & return & "Next step: Run 'teams' command separately with PNG files"

@@ -11,7 +11,27 @@ def extract_number(stem: str) -> str:
         return match.group(1)[-4:]  # Get last 4 digits
     return "0000"
 
-def construct_filename(row: dict, file_number: str, ext: str) -> str:
+def extract_batch_prefix(filename: str) -> str:
+    """Extract batch prefix from PhotoDay camera filename.
+
+    Examples:
+        JS101234.jpg -> JS10
+        JS201234.jpg -> JS20
+        ABC101234.jpg -> ABC10
+        renamed_file.jpg -> UNKNOWN
+
+    Returns:
+        Batch prefix string or "UNKNOWN" if pattern not found
+    """
+    stem = Path(filename).stem
+    # Look for pattern: letters followed by digits
+    # Extract everything up to and including first 2 digits after letters
+    match = re.match(r"^([A-Za-z]+)(\d{2})", stem)
+    if match:
+        return match.group(1) + match.group(2)  # e.g., "JS10"
+    return "UNKNOWN"
+
+def construct_filename(row: dict, file_number: str, ext: str, batch_suffix: str = "") -> str:
     last = sanitize(row.get("LASTNAME", ""))
     first = sanitize(row.get("FIRSTNAME", ""))
     team = sanitize(row.get("TEAMNAME", ""))
@@ -26,33 +46,45 @@ def construct_filename(row: dict, file_number: str, ext: str) -> str:
     if grade:
         parts.append(grade)
     parts.append(file_number)
-    return "_".join(parts) + ext
 
-def expand_rows(row: dict, photo_filenames: list[str]) -> list[dict]:
+    basename = "_".join(parts)
+    if batch_suffix:
+        return basename + batch_suffix + ext
+    return basename + ext
+
+def expand_rows(row: dict, photo_filenames: list[str], batch_suffix_map: dict = None) -> list[dict]:
     output_jpg = []
     output_png = []
+    batch_suffix_map = batch_suffix_map or {}
+
     for fname in photo_filenames:
         ext = Path(fname).suffix.lower()
         file_number = extract_number(Path(fname).stem)
-        
+        batch_prefix = extract_batch_prefix(fname)
+
+        # Get suffix for this batch (if any)
+        batch_suffix = batch_suffix_map.get(batch_prefix, "")
+
         # Create JPG version
-        newname_jpg = construct_filename(row, file_number, ".jpg")
+        newname_jpg = construct_filename(row, file_number, ".jpg", batch_suffix)
         row_jpg = row.copy()
         row_jpg["FILENUMBER"] = file_number
+        row_jpg["BATCH"] = batch_prefix
         row_jpg["PHOTO"] = fname
         row_jpg["NEWFILENAME"] = newname_jpg
         row_jpg["SPA"] = newname_jpg
         output_jpg.append(row_jpg)
-        
+
         # Create PNG version
-        newname_png = construct_filename(row, file_number, ".png")
+        newname_png = construct_filename(row, file_number, ".png", batch_suffix)
         row_png = row.copy()
         row_png["FILENUMBER"] = file_number
+        row_png["BATCH"] = batch_prefix
         row_png["PHOTO"] = fname
         row_png["NEWFILENAME"] = newname_png
         row_png["SPA"] = newname_png
         output_png.append(row_png)
-    
+
     return output_jpg, output_png
 
 def parse_filenames(raw: str) -> list[str]:
@@ -60,10 +92,11 @@ def parse_filenames(raw: str) -> list[str]:
     cleaned = re.sub(r"[\r\n;|]+", ",", raw)
     return [f.strip() for chunk in cleaned.split(",") for f in chunk.split() if f.strip()]
 
-def process_csv(input_csv: Path, output_dir: Path, jobname: str = "phsdebate25-26", team_field: str = "Team"):
+def process_csv(input_csv: Path, output_dir: Path, jobname: str = "phsdebate25-26", team_field: str = "Team", batch_suffix_map: dict = None):
     all_rows = []
     jpg_rows = []
     png_rows = []
+    batch_suffix_map = batch_suffix_map or {}
 
     with input_csv.open("r", newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
@@ -82,6 +115,8 @@ def process_csv(input_csv: Path, output_dir: Path, jobname: str = "phsdebate25-2
                     renamed_row["FIRSTNAME"] = value
                 elif key == team_field:
                     renamed_row["TEAMNAME"] = value
+                elif key == "Other":
+                    renamed_row["NUMBER"] = value
                 elif key not in columns_to_remove:
                     renamed_row[key] = value
 
@@ -94,7 +129,7 @@ def process_csv(input_csv: Path, output_dir: Path, jobname: str = "phsdebate25-2
             renamed_row["Team File"] = f"{teamname}.psb" if teamname else ""
 
             photos = parse_filenames(row.get("Photo Filenames", ""))
-            expanded_jpg, expanded_png = expand_rows(renamed_row, photos)
+            expanded_jpg, expanded_png = expand_rows(renamed_row, photos, batch_suffix_map)
             jpg_rows.extend(expanded_jpg)
             png_rows.extend(expanded_png)
 
@@ -107,11 +142,13 @@ def process_csv(input_csv: Path, output_dir: Path, jobname: str = "phsdebate25-2
             output_fieldnames.append("FIRSTNAME")
         elif fn == team_field:
             output_fieldnames.append("TEAMNAME")
+        elif fn == "Other":
+            output_fieldnames.append("NUMBER")
         elif fn not in columns_to_remove and fn not in output_fieldnames:
             output_fieldnames.append(fn)
 
     # Add new columns and processing columns
-    output_fieldnames.extend(["NAME", "Team File", "FILENUMBER", "PHOTO", "NEWFILENAME"])
+    output_fieldnames.extend(["NAME", "Team File", "FILENUMBER", "BATCH", "PHOTO", "NEWFILENAME"])
 
     def write_csv(name: str, rows: list):
         rows.sort(key=lambda r: r.get("SPA", ""))
@@ -134,12 +171,38 @@ def process_csv(input_csv: Path, output_dir: Path, jobname: str = "phsdebate25-2
     print(f"✅ Generated {jobname} DATA-JPG.csv, DATA-PNG.csv, DATA-ALL.csv and DATA-RENAME.txt with proper SPA filenames.")
     print(f"   Output directory: {output_dir}")
 
+    # Report batch detection
+    batches_found = set(row.get("BATCH", "UNKNOWN") for row in jpg_rows)
+    if len(batches_found) > 1:
+        print(f"\n📸 Multiple image batches detected: {', '.join(sorted(batches_found))}")
+        for batch in sorted(batches_found):
+            count = sum(1 for row in jpg_rows if row.get("BATCH") == batch)
+            suffix_info = f" (suffix: {batch_suffix_map[batch]})" if batch in batch_suffix_map and batch_suffix_map[batch] else ""
+            print(f"   {batch}: {count} images{suffix_info}")
+        if batch_suffix_map:
+            print(f"   Batch suffixes applied to filenames")
+    elif len(batches_found) == 1:
+        batch = list(batches_found)[0]
+        if batch != "UNKNOWN":
+            suffix_info = f" (suffix: {batch_suffix_map[batch]})" if batch in batch_suffix_map and batch_suffix_map[batch] else ""
+            print(f"\n📸 Single image batch detected: {batch}{suffix_info}")
+
 
 def run(args) -> int:
     """PhotoJobs CLI entrypoint for the csvgen command."""
     csv_path = Path(args.csv).expanduser().resolve()
     jobname = args.jobname
     team_field = args.team_field or "Team"
+    batch_suffixes_str = args.batch_suffixes or ""
+
+    # Parse batch suffixes (format: "BATCH1:_suffix1,BATCH2:_suffix2")
+    batch_suffix_map = {}
+    if batch_suffixes_str:
+        for pair in batch_suffixes_str.split(","):
+            pair = pair.strip()
+            if ":" in pair:
+                batch, suffix = pair.split(":", 1)
+                batch_suffix_map[batch.strip()] = suffix.strip()
 
     # Determine output directory
     if args.outdir:
@@ -158,11 +221,13 @@ def run(args) -> int:
     print(f"Processing CSV: {csv_path}")
     print(f"Job name: {jobname}")
     print(f"Team field: {team_field}")
+    if batch_suffix_map:
+        print(f"Batch suffixes: {batch_suffix_map}")
     print(f"Output directory: {output_dir}")
     print()
 
     # Process the CSV
-    process_csv(csv_path, output_dir, jobname, team_field)
+    process_csv(csv_path, output_dir, jobname, team_field, batch_suffix_map)
 
     return 0
 

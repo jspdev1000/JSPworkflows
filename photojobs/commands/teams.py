@@ -91,6 +91,52 @@ def prompt_default_team_name() -> str:
         print("Team name cannot be empty. Please try again.")
 
 
+def prompt_batch_selection(batches: Dict[str, int]) -> List[str]:
+    """Prompt user to select which batch(es) to include for team selection.
+
+    Args:
+        batches: Dictionary mapping batch prefix to image count
+
+    Returns:
+        List of selected batch prefixes
+    """
+    print("\n" + "=" * 60)
+    print("MULTIPLE IMAGE BATCHES DETECTED")
+    print("=" * 60)
+    print("\nThe following image batches were found in the CSV:")
+    print()
+
+    sorted_batches = sorted(batches.items())
+    for idx, (batch, count) in enumerate(sorted_batches, start=1):
+        print(f"  {idx}. {batch} ({count} images)")
+
+    print(f"  {len(sorted_batches) + 1}. ALL BATCHES (use all images)")
+    print()
+
+    while True:
+        choice = input(f"Which batch should be used for team selection? (1-{len(sorted_batches) + 1}): ").strip()
+
+        try:
+            choice_num = int(choice)
+            if choice_num == len(sorted_batches) + 1:
+                # User selected "ALL"
+                selected = [batch for batch, _ in sorted_batches]
+                print(f"Selected: ALL BATCHES ({', '.join(selected)})")
+                return selected
+            elif 1 <= choice_num <= len(sorted_batches):
+                # User selected a specific batch
+                selected_batch = sorted_batches[choice_num - 1][0]
+                print(f"Selected: {selected_batch}")
+                return [selected_batch]
+            else:
+                print(f"Invalid choice. Please enter a number between 1 and {len(sorted_batches) + 1}.")
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    print("=" * 60)
+    print()
+
+
 def run(args) -> int:
     """PhotoJobs CLI entrypoint for the teams command."""
     csv_path = Path(args.csv).expanduser().resolve()
@@ -169,12 +215,16 @@ def run(args) -> int:
 
             person_key = f"{lastname}|{firstname}"
 
+            # Get batch from CSV (added by csvgen)
+            batch = (row.get("BATCH") or "UNKNOWN").strip()
+
             # Store row data with sequence number
             row_data = {
                 "lastname": lastname,
                 "firstname": firstname,
                 "spa": spa,
                 "teamname": teamname,
+                "batch": batch,
                 "sequence": seq_num,
                 "row_index": row_index,
                 "original_row": row
@@ -196,6 +246,41 @@ def run(args) -> int:
 
     print(f"Found {len(person_images)} unique people")
     print()
+
+    # Detect and handle multiple batches
+    batch_counts: Dict[str, int] = defaultdict(int)
+    for person_key, images in person_images.items():
+        for img_data in images:
+            batch_counts[img_data['batch']] += 1
+
+    selected_batches: Optional[List[str]] = None
+    if len(batch_counts) > 1 and "BATCH" in fieldnames:
+        # Multiple batches detected - prompt user
+        selected_batches = prompt_batch_selection(batch_counts)
+
+        # Filter person_images to only include selected batches
+        filtered_person_images: Dict[str, List[Dict]] = defaultdict(list)
+        for person_key, images in person_images.items():
+            for img_data in images:
+                if img_data['batch'] in selected_batches:
+                    filtered_person_images[person_key].append(img_data)
+
+        # Replace person_images with filtered version
+        person_images = filtered_person_images
+
+        # Update rows_without_team to only include selected batches
+        rows_without_team = [
+            row_data for row_data in rows_without_team
+            if row_data['batch'] in selected_batches
+        ]
+
+        print(f"After batch filtering: {len(person_images)} people with images from selected batch(es)")
+        print()
+    elif len(batch_counts) == 1:
+        batch = list(batch_counts.keys())[0]
+        if batch != "UNKNOWN":
+            print(f"Single batch detected: {batch} ({batch_counts[batch]} images)")
+            print()
 
     # Handle missing team names
     persons_needing_team: Set[str] = set()
@@ -315,6 +400,8 @@ def run(args) -> int:
     print("=== Summary ===")
     print(f"Total people in CSV:        {total_people}")
     print(f"Files successfully copied:  {total_copied}")
+    if selected_batches:
+        print(f"Batches used:               {', '.join(selected_batches)}")
     print()
 
     # Teams breakdown
