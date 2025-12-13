@@ -25,7 +25,6 @@ def build_parser() -> argparse.ArgumentParser:
     # csvgen
     c = sub.add_parser("csvgen", help="Generate derived CSV outputs and rename plan")
     c.add_argument("--csv", required=True, help="Input CSV file")
-    c.add_argument("--root", required=True, help="Root folder containing originals (for matching/counts)")
     c.add_argument("--jobname", required=True, help="Job name used in output filenames")
     c.add_argument("--team-field", default="Team", help="Column name for team")
     c.add_argument("--outdir", default="", help="Output directory (defaults to same dir as input csv)")
