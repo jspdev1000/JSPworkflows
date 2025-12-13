@@ -55,13 +55,15 @@ else if cmdName is "verify" then
 else if cmdName is "csvgen" then
 	set csvAlias to choose file with prompt "Select the CSV file:" of type {"public.comma-separated-values-text", "public.text"}
 	set csvPath to POSIX path of csvAlias
+	set rootFolder to choose folder with prompt "Select the ROOT folder containing original images:"
+	set rootPath to POSIX path of rootFolder
 	-- Extract job name from CSV filename (remove extension)
 	set AppleScript's text item delimiters to "/"
 	set csvFileName to last text item of csvPath
 	set AppleScript's text item delimiters to "."
 	set jobName to first text item of csvFileName
 	set AppleScript's text item delimiters to ""
-	set shcmd to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs csvgen --csv " & quoted form of csvPath & " --jobname " & quoted form of jobName
+	set shcmd to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs csvgen --csv " & quoted form of csvPath & " --root " & quoted form of rootPath & " --jobname " & quoted form of jobName
 else if cmdName is "rename" then
 	set planAlias to choose file with prompt "Select the RENAME DATA (JPG) file:" of type {"public.text", "public.comma-separated-values-text"}
 	set planPath to POSIX path of planAlias
