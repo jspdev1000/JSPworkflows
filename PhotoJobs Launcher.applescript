@@ -110,14 +110,38 @@ if cmdName is "Run All" then
 		set progress additional description to "Step 4/4: Sorting into teams..."
 	end try
 
+	-- Check for multiple batches
+	set batchCheckCmd to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -c \"import csv; f=open('" & pngCsvPath & "'); r=csv.DictReader(f); batches=set(row.get('BATCH','UNKNOWN') for row in r); print(len(batches), ','.join(sorted(batches)))\""
+	set batchInfo to do shell script batchCheckCmd
+	set AppleScript's text item delimiters to " "
+	set batchParts to text items of batchInfo
+	set batchCount to item 1 of batchParts as integer
+	set AppleScript's text item delimiters to ""
+
 	-- Check if there are people without teams
 	set checkCmd to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -c \"import csv; f=open('" & pngCsvPath & "'); r=csv.DictReader(f); missing=sum(1 for row in r if not row.get('TEAMNAME', '').strip()); print(missing)\""
 	set missingCount to do shell script checkCmd
 
+	-- Build input for teams command (may need batch selection and/or default team)
+	set teamsInput to ""
+
+	-- Handle batch selection if multiple batches
+	if batchCount > 1 then
+		set batchDialog to display dialog "Multiple image batches detected in CSV. Which batch should be used for team selection?" & return & return & batchInfo & return & return & "Enter batch number (or 'all' for all batches):" default answer "1"
+		set batchChoice to text returned of batchDialog
+		set teamsInput to batchChoice & return
+	end if
+
+	-- Handle missing team names
 	if missingCount as integer > 0 then
 		set defaultTeamDialog to display dialog "There are " & missingCount & " people without a team. Enter a default team name for them:" default answer "NoTeam"
 		set defaultTeam to text returned of defaultTeamDialog
-		set cmd4 to "cd " & quoted form of toolsFolder & " && echo " & quoted form of defaultTeam & " | /usr/bin/python3 -m photojobs teams --csv " & quoted form of pngCsvPath & " --root " & quoted form of renamedPath & " --team-field TEAMNAME"
+		set teamsInput to teamsInput & defaultTeam & return
+	end if
+
+	-- Run teams command
+	if teamsInput is not "" then
+		set cmd4 to "cd " & quoted form of toolsFolder & " && echo " & quoted form of teamsInput & " | /usr/bin/python3 -m photojobs teams --csv " & quoted form of pngCsvPath & " --root " & quoted form of renamedPath & " --team-field TEAMNAME"
 	else
 		set cmd4 to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs teams --csv " & quoted form of pngCsvPath & " --root " & quoted form of renamedPath & " --team-field TEAMNAME"
 	end if
@@ -187,15 +211,39 @@ else if cmdName is "teams" then
 	set csvPath to POSIX path of csvAlias
 	set rootFolder to choose folder with prompt "Select the folder containing PNG images:"
 	set rootPath to POSIX path of rootFolder
-	
+
+	-- Check for multiple batches
+	set batchCheckCmd to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -c \"import csv; f=open('" & csvPath & "'); r=csv.DictReader(f); batches=set(row.get('BATCH','UNKNOWN') for row in r); print(len(batches), ','.join(sorted(batches)))\""
+	set batchInfo to do shell script batchCheckCmd
+	set AppleScript's text item delimiters to " "
+	set batchParts to text items of batchInfo
+	set batchCount to item 1 of batchParts as integer
+	set AppleScript's text item delimiters to ""
+
 	-- Check if there are people without teams
 	set checkCmd to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -c \"import csv; f=open('" & csvPath & "'); r=csv.DictReader(f); missing=sum(1 for row in r if not row.get('TEAMNAME', '').strip()); print(missing)\""
 	set missingCount to do shell script checkCmd
-	
+
+	-- Build input for teams command
+	set teamsInput to ""
+
+	-- Handle batch selection if multiple batches
+	if batchCount > 1 then
+		set batchDialog to display dialog "Multiple image batches detected in CSV. Which batch should be used for team selection?" & return & return & batchInfo & return & return & "Enter batch number (or 'all' for all batches):" default answer "1"
+		set batchChoice to text returned of batchDialog
+		set teamsInput to batchChoice & return
+	end if
+
+	-- Handle missing team names
 	if missingCount as integer > 0 then
 		set defaultTeamDialog to display dialog "There are " & missingCount & " people without a team. Enter a default team name for them:" default answer "NoTeam"
 		set defaultTeam to text returned of defaultTeamDialog
-		set shcmd to "cd " & quoted form of toolsFolder & " && echo " & quoted form of defaultTeam & " | /usr/bin/python3 -m photojobs teams --csv " & quoted form of csvPath & " --root " & quoted form of rootPath & " --team-field TEAMNAME"
+		set teamsInput to teamsInput & defaultTeam & return
+	end if
+
+	-- Run teams command
+	if teamsInput is not "" then
+		set shcmd to "cd " & quoted form of toolsFolder & " && echo " & quoted form of teamsInput & " | /usr/bin/python3 -m photojobs teams --csv " & quoted form of csvPath & " --root " & quoted form of rootPath & " --team-field TEAMNAME"
 	else
 		set shcmd to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs teams --csv " & quoted form of csvPath & " --root " & quoted form of rootPath & " --team-field TEAMNAME"
 	end if

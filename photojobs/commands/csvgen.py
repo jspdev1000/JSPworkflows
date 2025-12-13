@@ -11,6 +11,26 @@ def extract_number(stem: str) -> str:
         return match.group(1)[-4:]  # Get last 4 digits
     return "0000"
 
+def extract_batch_prefix(filename: str) -> str:
+    """Extract batch prefix from PhotoDay camera filename.
+
+    Examples:
+        JS101234.jpg -> JS10
+        JS201234.jpg -> JS20
+        ABC101234.jpg -> ABC10
+        renamed_file.jpg -> UNKNOWN
+
+    Returns:
+        Batch prefix string or "UNKNOWN" if pattern not found
+    """
+    stem = Path(filename).stem
+    # Look for pattern: letters followed by digits
+    # Extract everything up to and including first 2 digits after letters
+    match = re.match(r"^([A-Za-z]+)(\d{2})", stem)
+    if match:
+        return match.group(1) + match.group(2)  # e.g., "JS10"
+    return "UNKNOWN"
+
 def construct_filename(row: dict, file_number: str, ext: str) -> str:
     last = sanitize(row.get("LASTNAME", ""))
     first = sanitize(row.get("FIRSTNAME", ""))
@@ -34,25 +54,28 @@ def expand_rows(row: dict, photo_filenames: list[str]) -> list[dict]:
     for fname in photo_filenames:
         ext = Path(fname).suffix.lower()
         file_number = extract_number(Path(fname).stem)
-        
+        batch_prefix = extract_batch_prefix(fname)
+
         # Create JPG version
         newname_jpg = construct_filename(row, file_number, ".jpg")
         row_jpg = row.copy()
         row_jpg["FILENUMBER"] = file_number
+        row_jpg["BATCH"] = batch_prefix
         row_jpg["PHOTO"] = fname
         row_jpg["NEWFILENAME"] = newname_jpg
         row_jpg["SPA"] = newname_jpg
         output_jpg.append(row_jpg)
-        
+
         # Create PNG version
         newname_png = construct_filename(row, file_number, ".png")
         row_png = row.copy()
         row_png["FILENUMBER"] = file_number
+        row_png["BATCH"] = batch_prefix
         row_png["PHOTO"] = fname
         row_png["NEWFILENAME"] = newname_png
         row_png["SPA"] = newname_png
         output_png.append(row_png)
-    
+
     return output_jpg, output_png
 
 def parse_filenames(raw: str) -> list[str]:
@@ -111,7 +134,7 @@ def process_csv(input_csv: Path, output_dir: Path, jobname: str = "phsdebate25-2
             output_fieldnames.append(fn)
 
     # Add new columns and processing columns
-    output_fieldnames.extend(["NAME", "Team File", "FILENUMBER", "PHOTO", "NEWFILENAME"])
+    output_fieldnames.extend(["NAME", "Team File", "FILENUMBER", "BATCH", "PHOTO", "NEWFILENAME"])
 
     def write_csv(name: str, rows: list):
         rows.sort(key=lambda r: r.get("SPA", ""))
@@ -133,6 +156,19 @@ def process_csv(input_csv: Path, output_dir: Path, jobname: str = "phsdebate25-2
     write_rename_txt(f"{jobname} DATA-RENAME.txt", jpg_rows)
     print(f"✅ Generated {jobname} DATA-JPG.csv, DATA-PNG.csv, DATA-ALL.csv and DATA-RENAME.txt with proper SPA filenames.")
     print(f"   Output directory: {output_dir}")
+
+    # Report batch detection
+    batches_found = set(row.get("BATCH", "UNKNOWN") for row in jpg_rows)
+    if len(batches_found) > 1:
+        print(f"\n📸 Multiple image batches detected: {', '.join(sorted(batches_found))}")
+        for batch in sorted(batches_found):
+            count = sum(1 for row in jpg_rows if row.get("BATCH") == batch)
+            print(f"   {batch}: {count} images")
+        print(f"   Note: Teams command will prompt for batch selection if multiple batches exist.")
+    elif len(batches_found) == 1:
+        batch = list(batches_found)[0]
+        if batch != "UNKNOWN":
+            print(f"\n📸 Single image batch detected: {batch}")
 
 
 def run(args) -> int:

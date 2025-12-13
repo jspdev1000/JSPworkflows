@@ -84,12 +84,20 @@ python3 -m photojobs csvgen --csv "/path/file.csv" --jobname "JobName" [--team-f
 - Expands each subject into multiple rows (one per photo)
 - Generates new filenames: `Last_First_Team_Number_Grade_FileNumber.ext`
 - Extracts 4-digit file numbers from original filenames
+- **Detects image batches** by analyzing filename prefixes (e.g., JS101234 vs JS201234)
+- Adds BATCH column to all output CSVs for downstream filtering
 
 **Outputs**:
-- `<jobname> DATA-JPG.csv` - All subjects with .jpg extension (includes PHOTO and NEWFILENAME columns for rename command)
-- `<jobname> DATA-PNG.csv` - All subjects with .png extension (includes TEAMNAME column for teams command)
+- `<jobname> DATA-JPG.csv` - All subjects with .jpg extension (includes PHOTO, NEWFILENAME, and BATCH columns)
+- `<jobname> DATA-PNG.csv` - All subjects with .png extension (includes TEAMNAME and BATCH columns)
 - `<jobname> DATA-ALL.csv` - Combined JPG + PNG rows
 - `<jobname> DATA-RENAME.txt` - Tab-delimited rename plan (original → new filename) - legacy format
+
+**Batch Detection**:
+- Automatically detects multiple image batches from filename prefixes
+- Example: JS101234.jpg → batch "JS10", JS201234.jpg → batch "JS20"
+- Reports detected batches in output summary
+- BATCH column preserved through rename step for team selection filtering
 
 **Default output**: Same directory as input CSV (unless `--outdir` specified)
 
@@ -149,7 +157,10 @@ python3 -m photojobs teams --csv "/path/file.csv" --root "/path/images" [--team-
 
 **Behavior**:
 - Reads CSV (typically the PNG output from csvgen)
+- **Detects multiple image batches** from BATCH column if present
+- **Prompts for batch selection** if multiple batches found (e.g., "JS10" vs "JS20")
 - Groups images by person (LASTNAME + FIRSTNAME)
+- **Filters to selected batch(es)** before finding first images
 - **For each person, checks which files actually exist in the source folder**
 - **Identifies FIRST image from existing files by 4-digit sequence number**
 - Extracts sequence from filename (last 4-digit block, ignoring any suffix after it)
@@ -168,9 +179,17 @@ python3 -m photojobs teams --csv "/path/file.csv" --root "/path/images" [--team-
 
 **Default output**: `_TeamIndSorted` in the same directory as the root source folder
 
+**Batch Selection**:
+- If multiple batches detected (e.g., JS10, JS20), prompts user:
+  - Option to select specific batch (1, 2, etc.)
+  - Option to select ALL batches
+- Filters all person records to only include images from selected batch(es)
+- Displays batch selection in summary
+
 **Summary Output**:
 - Total people in CSV
 - Files successfully copied
+- Batches used (if batch filtering was applied)
 - Teams found with player count per team
 - People without team assignment (if any)
 - People without photos (with expected filename)
@@ -205,6 +224,27 @@ The `locate_matches()` function in `keywords.py:63` implements sophisticated fil
 ### CSV Header Normalization
 - `norm_header()` removes spaces and lowercases for flexible matching
 - Supports common typos (e.g., "FIRSTNMAE" for "FIRSTNAME")
+
+### Batch Detection System
+The batch detection system tracks multiple groups of images taken at different times:
+
+**Detection** (`extract_batch_prefix()` in csvgen.py:14):
+- Analyzes PhotoDay camera filenames (e.g., JS101234.jpg, JS201234.jpg)
+- Extracts prefix pattern: letters + first 2 digits (JS101234 → "JS10")
+- Returns "UNKNOWN" for non-standard filenames
+
+**Filtering** (`prompt_batch_selection()` in teams.py:94):
+- Detects unique batch values from BATCH column in CSV
+- Prompts user if multiple batches found
+- Options: Select specific batch (1, 2, etc.) or ALL batches
+- Filters person_images dictionary to only include selected batch(es)
+- Preserves batch info through rename step via CSV columns
+
+**Use Case**:
+- Photographer takes group photos in morning (JS101xxx.jpg)
+- Photographer takes individual photos in afternoon (JS201xxx.jpg)
+- User wants only individual photos for team selection
+- System detects both batches, user selects "JS20"
 
 ### csvgen Filename Construction
 The `construct_filename()` function in `csvgen.py:14` builds output filenames:
@@ -288,6 +328,7 @@ The AppleScript launcher includes a "Run All" option that automates the complete
 - Automatically derives all intermediate paths and filenames
 - Progress indicator shows 4 steps with current step
 - Detects preset from CSV headers (photoday vs legacy)
+- Detects and prompts for batch selection if multiple batches exist
 - Handles team assignment prompts if needed
 - Final summary shows all output locations
 
