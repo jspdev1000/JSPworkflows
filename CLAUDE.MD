@@ -77,7 +77,7 @@ python3 -m photojobs csvgen --csv "/path/file.csv" --jobname "JobName" [--team-f
 
 **Behavior**:
 - Reads PhotoDay-format CSV with subject information (pure data processing - no image files needed)
-- Renames columns: "Last Name" → "LASTNAME", "First Name" → "FIRSTNAME", team field → "TEAMNAME"
+- Renames columns: "Last Name" → "LASTNAME", "First Name" → "FIRSTNAME", team field → "TEAMNAME", "Other" → "NUMBER"
 - Removes columns: "Check-In Date", "Added With", "Photo Filenames", "Featured Photo"
 - Adds new columns: "NAME" (First + Last), "Team File" (e.g., "TeamName.psb")
 - Parses "Photo Filenames" field (supports multiple filenames per subject)

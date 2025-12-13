@@ -115,6 +115,8 @@ def process_csv(input_csv: Path, output_dir: Path, jobname: str = "phsdebate25-2
                     renamed_row["FIRSTNAME"] = value
                 elif key == team_field:
                     renamed_row["TEAMNAME"] = value
+                elif key == "Other":
+                    renamed_row["NUMBER"] = value
                 elif key not in columns_to_remove:
                     renamed_row[key] = value
 
@@ -140,6 +142,8 @@ def process_csv(input_csv: Path, output_dir: Path, jobname: str = "phsdebate25-2
             output_fieldnames.append("FIRSTNAME")
         elif fn == team_field:
             output_fieldnames.append("TEAMNAME")
+        elif fn == "Other":
+            output_fieldnames.append("NUMBER")
         elif fn not in columns_to_remove and fn not in output_fieldnames:
             output_fieldnames.append(fn)
 
