@@ -163,15 +163,16 @@ python3 -m photojobs teams --csv "/path/file.csv" --root "/path/images" [--team-
 - Reads CSV (typically the PNG output from csvgen)
 - **Detects multiple image batches** from BATCH column if present
 - **Prompts for batch selection** if multiple batches found (e.g., "JS10" vs "JS20")
-- Groups images by person (LASTNAME + FIRSTNAME)
+- **Groups images by (person, team) combination** to handle multi-team assignments
 - **Filters to selected batch(es)** before finding first images
-- **For each person, checks which files actually exist in the source folder**
+- **For each person-team combination, checks which files actually exist in the source folder**
 - **Identifies FIRST image from existing files by 4-digit sequence number**
 - Extracts sequence from filename (last 4-digit block, ignoring any suffix after it)
-- Copies first image for each person to team subfolders
+- Copies first image for each person-team assignment to respective team subfolders
 - If any people have no TEAMNAME, prompts ONCE for a default team name to apply to all
 - Creates team subfolders automatically in output directory
-- **Key: Determines first photo based on actual folder contents, not CSV order**
+- **Verifies output by counting expected vs actual files per team**
+- **Key: Handles people assigned to multiple teams (copies appropriate image to each team folder)**
 
 **Sequence Number Extraction**:
 - Finds all 4+ digit sequences in filename
@@ -190,13 +191,20 @@ python3 -m photojobs teams --csv "/path/file.csv" --root "/path/images" [--team-
 - Filters all person records to only include images from selected batch(es)
 - Displays batch selection in summary
 
+**Verification Output**:
+- Expected person-team assignments (from CSV)
+- Actual files copied during processing
+- Actual files verified in output folders
+- Pass/fail indicator for count matching
+- Per-team breakdown showing actual vs expected counts
+
 **Summary Output**:
-- Total people in CSV
+- Total person-team assignments in CSV
 - Files successfully copied
 - Batches used (if batch filtering was applied)
-- Teams found with player count per team
+- Teams found with player count per team (expected/actual comparison)
 - People without team assignment (if any)
-- People without photos (with expected filename)
+- Person-team assignments without photos (with expected filename)
 - Errors encountered (with details)
 
 **Implementation**: `photojobs/commands/teams.py`

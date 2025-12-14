@@ -5,9 +5,11 @@ Usage:
 
 Behavior:
 - Reads CSV (typically the PNG output from csvgen)
-- For each person, finds their FIRST image by 4-digit sequence number
-- Copies first image for each person to team subfolders
+- Groups by (person, team) combination to handle multi-team assignments
+- For each person-team assignment, finds FIRST image by 4-digit sequence number
+- Copies first image for each person-team to respective team subfolders
 - Prompts for team name if any records have no TEAMNAME
+- Verifies output by counting expected vs actual files
 """
 
 import csv
@@ -163,9 +165,9 @@ def run(args) -> int:
     print(f"DEBUG: Team field: {team_field}")
     print()
 
-    # Read CSV and group by person (identified by LASTNAME + FIRSTNAME)
-    # Track all images per person, then sort to find first by sequence number
-    person_images: Dict[str, List[Dict]] = defaultdict(list)
+    # Read CSV and group by (person, team) combination
+    # Track all images per person+team, then sort to find first by sequence number
+    person_team_images: Dict[str, List[Dict]] = defaultdict(list)
     rows_without_team: List[Dict] = []
 
     with csv_path.open("r", newline="", encoding="utf-8-sig") as f:
@@ -213,8 +215,6 @@ def run(args) -> int:
                 print(f"WARNING: Row {row_index} - could not extract sequence number from '{spa}', skipping")
                 continue
 
-            person_key = f"{lastname}|{firstname}"
-
             # Get batch from CSV (added by csvgen)
             batch = (row.get("BATCH") or "UNKNOWN").strip()
 
@@ -230,7 +230,9 @@ def run(args) -> int:
                 "original_row": row
             }
 
-            person_images[person_key].append(row_data)
+            # Key by person AND team (to handle multi-team assignments)
+            person_team_key = f"{lastname}|{firstname}|{teamname}"
+            person_team_images[person_team_key].append(row_data)
 
             # Track rows without team
             if not teamname:
@@ -240,16 +242,23 @@ def run(args) -> int:
         print(f"DEBUG: CSV fieldnames: {fieldnames}")
         print()
 
-    if not person_images:
+    if not person_team_images:
         print("ERROR: No valid person records found in CSV")
         return 1
 
-    print(f"Found {len(person_images)} unique people")
+    # Count unique people and unique (person, team) combinations
+    unique_people = set()
+    for person_team_key in person_team_images.keys():
+        parts = person_team_key.split("|")
+        if len(parts) >= 2:
+            unique_people.add(f"{parts[0]}|{parts[1]}")  # lastname|firstname
+
+    print(f"Found {len(unique_people)} unique people with {len(person_team_images)} person-team assignments")
     print()
 
     # Detect and handle multiple batches
     batch_counts: Dict[str, int] = defaultdict(int)
-    for person_key, images in person_images.items():
+    for person_team_key, images in person_team_images.items():
         for img_data in images:
             batch_counts[img_data['batch']] += 1
 
@@ -258,15 +267,15 @@ def run(args) -> int:
         # Multiple batches detected - prompt user
         selected_batches = prompt_batch_selection(batch_counts)
 
-        # Filter person_images to only include selected batches
-        filtered_person_images: Dict[str, List[Dict]] = defaultdict(list)
-        for person_key, images in person_images.items():
+        # Filter person_team_images to only include selected batches
+        filtered_person_team_images: Dict[str, List[Dict]] = defaultdict(list)
+        for person_team_key, images in person_team_images.items():
             for img_data in images:
                 if img_data['batch'] in selected_batches:
-                    filtered_person_images[person_key].append(img_data)
+                    filtered_person_team_images[person_team_key].append(img_data)
 
-        # Replace person_images with filtered version
-        person_images = filtered_person_images
+        # Replace person_team_images with filtered version
+        person_team_images = filtered_person_team_images
 
         # Update rows_without_team to only include selected batches
         rows_without_team = [
@@ -274,7 +283,14 @@ def run(args) -> int:
             if row_data['batch'] in selected_batches
         ]
 
-        print(f"After batch filtering: {len(person_images)} people with images from selected batch(es)")
+        # Recalculate unique people count after filtering
+        unique_people_filtered = set()
+        for person_team_key in person_team_images.keys():
+            parts = person_team_key.split("|")
+            if len(parts) >= 2:
+                unique_people_filtered.add(f"{parts[0]}|{parts[1]}")
+
+        print(f"After batch filtering: {len(unique_people_filtered)} people with {len(person_team_images)} person-team assignments from selected batch(es)")
         print()
     elif len(batch_counts) == 1:
         batch = list(batch_counts.keys())[0]
@@ -306,19 +322,27 @@ def run(args) -> int:
         print()
 
         # Apply default team name to all people without one
-        for person_key, images in person_images.items():
+        # Need to rebuild person_team_images with new team names
+        new_person_team_images: Dict[str, List[Dict]] = defaultdict(list)
+        for person_team_key, images in person_team_images.items():
             for img_data in images:
                 if not img_data['teamname']:
                     img_data['teamname'] = default_team_name
+                    person_key = f"{img_data['lastname']}|{img_data['firstname']}"
                     print(f"DEBUG: Assigned '{default_team_name}' to {person_key}")
+                # Rebuild key with updated team name
+                new_key = f"{img_data['lastname']}|{img_data['firstname']}|{img_data['teamname']}"
+                new_person_team_images[new_key].append(img_data)
+
+        person_team_images = new_person_team_images
 
     # Create output directory
     output_root.mkdir(parents=True, exist_ok=True)
     print(f"DEBUG: Created output directory: {output_root}")
     print()
 
-    # Process each person: find first image and copy to team folder
-    total_people = 0
+    # Process each person-team combination: find first image and copy to team folder
+    total_person_team_assignments = 0
     total_copied = 0
     missing_files = 0
     errors = 0
@@ -327,16 +351,19 @@ def run(args) -> int:
     error_details: List[str] = []
     people_without_team_count = len(persons_needing_team)
 
-    for person_key, images in person_images.items():
-        total_people += 1
-        lastname, firstname = person_key.split("|")
+    for person_team_key, images in person_team_images.items():
+        total_person_team_assignments += 1
+        parts = person_team_key.split("|")
+        lastname = parts[0]
+        firstname = parts[1]
+        teamname = parts[2] if len(parts) > 2 else ""
         person_name = f"{firstname} {lastname}"
 
-        # Debug first 3 people
-        debug_mode = (total_people <= 3)
+        # Debug first 3 assignments
+        debug_mode = (total_person_team_assignments <= 3)
         if debug_mode:
-            print(f"DEBUG: Processing person {total_people}: {person_name}")
-            print(f"  Total CSV records for this person: {len(images)}")
+            print(f"DEBUG: Processing assignment {total_person_team_assignments}: {person_name} -> {teamname}")
+            print(f"  Total CSV records for this person-team: {len(images)}")
 
         # Find which files actually exist in the folder
         existing_files = []
@@ -356,14 +383,14 @@ def run(args) -> int:
                 if debug_mode:
                     print(f"  File not found: {spa_filename}")
 
-        # If no files exist for this person, skip
+        # If no files exist for this person-team combination, skip
         if not existing_files:
             missing_files += 1
             expected_list = ', '.join([img['spa'] for img in images[:3]])  # Show first 3
             if len(images) > 3:
                 expected_list += f" ... ({len(images)} total)"
-            people_without_photos.append(f"{person_name} (expected: {expected_list})")
-            print(f"WARNING: No files found for {person_name} (checked {len(images)} CSV records)")
+            people_without_photos.append(f"{person_name} -> {teamname} (expected: {expected_list})")
+            print(f"WARNING: No files found for {person_name} -> {teamname} (checked {len(images)} CSV records)")
             continue
 
         # Sort existing files by sequence number and pick the first
@@ -371,7 +398,6 @@ def run(args) -> int:
         first_file = existing_files_sorted[0]
 
         source_file = first_file['path']
-        teamname = first_file['teamname']
 
         if debug_mode:
             print(f"  Selected first file: {first_file['spa']} (seq: {first_file['sequence']})")
@@ -391,23 +417,50 @@ def run(args) -> int:
             print(f"Copied: {person_name} ({first_file['sequence']}) -> {teamname}/{source_file.name}")
         except Exception as e:
             errors += 1
-            error_msg = f"{person_name}: {e}"
+            error_msg = f"{person_name} -> {teamname}: {e}"
             error_details.append(error_msg)
-            print(f"ERROR: Failed to copy {source_file} for {person_name}: {e}")
+            print(f"ERROR: Failed to copy {source_file} for {person_name} -> {teamname}: {e}")
+
+    # Verification: Count files in output folders
+    print()
+    print("=== Verification ===")
+    actual_files_by_team: Dict[str, int] = defaultdict(int)
+    total_actual_files = 0
+
+    for team_folder in output_root.iterdir():
+        if team_folder.is_dir():
+            file_count = sum(1 for f in team_folder.iterdir() if f.is_file())
+            actual_files_by_team[team_folder.name] = file_count
+            total_actual_files += file_count
+
+    print(f"Expected person-team assignments: {len(person_team_images)}")
+    print(f"Actual files copied to output:    {total_copied}")
+    print(f"Actual files verified in folders: {total_actual_files}")
+
+    # Check if counts match
+    if total_actual_files == len(person_team_images) and total_actual_files == total_copied:
+        print("✓ Verification PASSED: All expected files are present")
+    else:
+        print("✗ Verification FAILED: File count mismatch")
+        print(f"  Expected: {len(person_team_images)}, Copied: {total_copied}, Verified: {total_actual_files}")
+
+    print()
 
     # Summary
-    print()
     print("=== Summary ===")
-    print(f"Total people in CSV:        {total_people}")
-    print(f"Files successfully copied:  {total_copied}")
+    print(f"Total person-team assignments:  {len(person_team_images)}")
+    print(f"Files successfully copied:      {total_copied}")
     if selected_batches:
-        print(f"Batches used:               {', '.join(selected_batches)}")
+        print(f"Batches used:                   {', '.join(selected_batches)}")
     print()
 
-    # Teams breakdown
+    # Teams breakdown - compare expected vs actual
     print(f"Teams found: {len(team_stats)}")
     for team in sorted(team_stats.keys()):
-        print(f"  {team}: {team_stats[team]} player(s)")
+        expected = team_stats[team]
+        actual = actual_files_by_team.get(team, 0)
+        match_indicator = "✓" if expected == actual else "✗"
+        print(f"  {match_indicator} {team}: {actual}/{expected} files")
     print()
 
     # People without team assignment
@@ -418,7 +471,7 @@ def run(args) -> int:
 
     # Missing photos
     if missing_files > 0:
-        print(f"People without photos: {missing_files}")
+        print(f"Person-team assignments without photos: {missing_files}")
         for person_info in people_without_photos:
             print(f"  - {person_info}")
         print()
