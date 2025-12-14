@@ -9,7 +9,7 @@ set AppleScript's text item delimiters to "/"
 set toolsFolder to (items 1 thru -2 of folderParts) as string
 set toolsFolder to "/" & toolsFolder
 
-set taskList to {"Run All", "keywords", "verify", "csvgen", "rename", "teams"}
+set taskList to {"Run All", "keywords", "verify", "csvgen", "rename", "teams", "scale"}
 set chosenTask to choose from list taskList with prompt "Choose PhotoJobs task:" default items {"Run All"}
 if chosenTask is false then return
 set cmdName to item 1 of chosenTask
@@ -230,6 +230,12 @@ else if cmdName is "teams" then
 	else
 		set shcmd to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs teams --csv " & quoted form of csvPath & " --root " & quoted form of rootPath & " --team-field TEAMNAME"
 	end if
+else if cmdName is "scale" then
+	set rootFolder to choose folder with prompt "Select the folder containing images to resize:"
+	set rootPath to POSIX path of rootFolder
+	set sizeDialog to display dialog "Enter the target size in pixels for the longest side (e.g., 2000):" default answer "2000"
+	set targetSize to text returned of sizeDialog
+	set shcmd to "cd " & quoted form of toolsFolder & " && /usr/bin/python3 -m photojobs scale --root " & quoted form of rootPath & " --size " & targetSize
 end if
 
 -- Progress indicator while running
