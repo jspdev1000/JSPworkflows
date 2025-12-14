@@ -174,12 +174,14 @@ def run(args) -> int:
         reader = csv.DictReader(f)
         fieldnames = reader.fieldnames or []
 
-        # Verify required fields
-        if team_field not in fieldnames:
-            print(f"ERROR: Team field '{team_field}' not found in CSV.")
-            print(f"Available fields: {', '.join(fieldnames)}")
-            return 1
+        # Check if team field exists in CSV
+        team_field_exists = team_field in fieldnames
+        if not team_field_exists:
+            print(f"WARNING: Team field '{team_field}' not found in CSV.")
+            print(f"All people will be assigned to the same team (you will be prompted for the team name).")
+            print()
 
+        # Verify required fields
         required_fields = ["LASTNAME", "FIRSTNAME", "SPA"]
         missing = [f for f in required_fields if f not in fieldnames]
         if missing:
@@ -195,7 +197,8 @@ def run(args) -> int:
             lastname = (row.get("LASTNAME") or "").strip()
             firstname = (row.get("FIRSTNAME") or "").strip()
             spa = (row.get("SPA") or "").strip()
-            teamname = (row.get(team_field) or "").strip()
+            # If team field doesn't exist, treat as empty (will be prompted later)
+            teamname = (row.get(team_field) or "").strip() if team_field_exists else ""
 
             # Debug first few rows
             if row_index <= 3:
