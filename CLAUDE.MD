@@ -20,6 +20,7 @@ PhotoJobsTools is a Python CLI application designed to manage photo metadata and
 | csvgen | ✅ Fully implemented | Generates derived CSV outputs and rename plans |
 | rename | ✅ Fully implemented | CSV-based file renaming with one-to-many support |
 | teams | ✅ Fully implemented | Sorts first image per person into team subfolders |
+| scale | ✅ Fully implemented | Resize images proportionally by longest side |
 
 ## Commands
 
@@ -209,6 +210,53 @@ python3 -m photojobs teams --csv "/path/file.csv" --root "/path/images" [--team-
 
 **Implementation**: `photojobs/commands/teams.py`
 
+### 6. scale
+**Purpose**: Resize images proportionally by longest side
+
+**Usage**:
+```bash
+python3 -m photojobs scale --root "/path/to/images" --size 2000
+```
+
+**Behavior**:
+- Processes all image files in the source folder
+- Scales images proportionally so the longest side equals the specified size
+- Preserves aspect ratio automatically
+- Uses high-quality LANCZOS resampling for best results
+- Skips images that are already at the target size
+- Skips images where output file already exists
+- Outputs to parent folder with naming pattern: `<folder>_<size>`
+- Example: `BannerJPG` → `BannerJPG_2000` (if size=2000)
+
+**Supported Formats**:
+- JPEG (.jpg, .jpeg)
+- PNG (.png)
+- Case-insensitive (.JPG, .JPEG, .PNG also supported)
+
+**Image Quality**:
+- JPEG: Saved with quality=95, optimize=True
+- PNG: Saved with default PNG compression
+- Uses Pillow (PIL) library for image processing
+
+**Summary Output**:
+- Total images found
+- Successfully scaled count
+- Skipped count (already exists or already correct size)
+- Failed count (with error details)
+- Output folder path
+
+**Example**:
+```bash
+# Resize all images in BannerJPG folder to 2000px on longest side
+python3 -m photojobs scale --root ./BannerJPG --size 2000
+# Output: ./BannerJPG_2000/
+```
+
+**Dependencies**:
+- Requires Pillow library: `pip3 install Pillow`
+
+**Implementation**: `photojobs/commands/scale.py`
+
 ## Key Technical Details
 
 ### ExifTool Integration
@@ -367,7 +415,7 @@ python3 -m photojobs teams --csv "MyJob2025 DATA-PNG.csv" --root /path/to/png/im
 - Output folders preserve the original directory structure
 - Detailed failure logs are generated for troubleshooting
 - The tool handles multiple CSV formats for backward compatibility
-- Production-ready commands: `keywords`, `csvgen`, `rename`, `teams`
+- Production-ready commands: `keywords`, `csvgen`, `rename`, `teams`, `scale`
 - The `teams` command prompts once per execution for a default team name if any people lack TEAMNAME values
 - The `csvgen` command is pure data processing - no image files needed
 - The AppleScript launcher provides both individual command access and a "Run All" automated workflow

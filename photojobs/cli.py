@@ -4,6 +4,7 @@ from .commands import verify as verify_cmd
 from .commands import csvgen as csvgen_cmd
 from .commands import rename as rename_cmd
 from .commands import teams as teams_cmd
+from .commands import scale as scale_cmd
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -43,6 +44,11 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--team-field", default="TEAMNAME", help="Team column name")
     t.add_argument("--out", default="", help="Output folder (defaults to _TeamIndSorted in parent dir)")
 
+    # scale
+    s = sub.add_parser("scale", help="Resize images by longest side")
+    s.add_argument("--root", required=True, help="Source folder containing images")
+    s.add_argument("--size", type=int, required=True, help="Target size in pixels for longest side")
+
     return p
 
 
@@ -60,6 +66,8 @@ def main(argv=None) -> int:
         return rename_cmd.run(args)
     elif args.cmd == "teams":
         return teams_cmd.run(args)
+    elif args.cmd == "scale":
+        return scale_cmd.run(args)
 
     p.error("Unknown command")
     return 2
