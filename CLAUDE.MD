@@ -338,8 +338,77 @@ The `construct_filename()` function in `csvgen.py:14` builds output filenames:
 
 ## Project Setup
 
-The project includes a bootstrap script for initializing the project structure:
-- `bootstrap_photojobs.sh` - Creates directory structure, pyproject.toml, .gitignore, and stub files
+The project includes setup and configuration scripts:
+
+### Setup Check Script
+**File**: `setup_check.sh`
+
+**Purpose**: Verify that all required dependencies are installed on a new Mac or fresh installation
+
+**Usage**:
+```bash
+./setup_check.sh
+```
+
+**Checks Performed**:
+- **Python 3**: Verifies Python 3 is installed and recommends 3.9+ (required)
+- **Pillow (PIL)**: Checks for Pillow library in system Python (required for `scale` command)
+- **exiftool**: Verifies exiftool is installed (required for `keywords` command)
+- **Homebrew**: Checks if Homebrew is installed (optional but recommended)
+- **git**: Verifies git is available (usually pre-installed on macOS)
+- **PhotoJobsTools package**: Checks if the package is installed via pip
+
+**Output**:
+- Color-coded status indicators (✓ green for found, ✗ red for missing, ⚠ yellow for warnings)
+- Summary of missing dependencies
+- Installation commands for any missing tools
+- Instructions for optional package installation
+
+**Installation Commands Provided**:
+The script generates ready-to-run commands for missing dependencies:
+- Homebrew installation (if needed)
+- `brew install python3` (if Python not found)
+- `brew install exiftool` (if exiftool not found)
+- `/usr/bin/python3 -m pip install --user Pillow` (if Pillow not found)
+- `xcode-select --install` (if git not found)
+- `pip3 install --user -e .` (optional package installation)
+
+**When to Use**:
+- Setting up PhotoJobsTools on a new Mac
+- Troubleshooting dependency issues
+- Verifying system is ready before running commands
+- After a fresh macOS installation or update
+
+**Example Output**:
+```
+==========================================
+PhotoJobsTools Setup Check
+==========================================
+
+Checking Python 3...
+✓ Python 3 found: 3.11.4
+Checking Pillow library...
+✓ Pillow found (system Python): 10.0.0
+Checking exiftool...
+✓ exiftool found: 12.62
+Checking Homebrew...
+✓ Homebrew found: Homebrew 4.0.28
+Checking git...
+✓ git found: git version 2.39.2
+
+==========================================
+Summary
+==========================================
+✓ All required dependencies are installed!
+
+You're ready to use PhotoJobsTools:
+  python3 -m photojobs --help
+```
+
+### Bootstrap Script
+**File**: `bootstrap_photojobs.sh`
+
+**Purpose**: Creates directory structure, pyproject.toml, .gitignore, and stub files for initial project setup
 
 ## Presets
 
